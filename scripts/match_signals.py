@@ -5,7 +5,7 @@ import os
 import json
 
 from parse_xml import parse_xml, Scope, Variable, Loc
-from parse_vcd import get_vcd_signals
+from parse_vcd import get_vcd_signals, get_signal_values
 
 
 TYPE_ANNOTATION_RE = re.compile(r"\s*/\*TYPE (.*)\*/")
@@ -57,13 +57,15 @@ def match_signals(hierarchy: Scope,files: dict[str,str],signals: list[tuple[str]
             for l,line in enumerate(fp,start=1):
                 while l_index<len(locs) and locs[l_index].l2==l:
                     # look for type tag
+                    print(locs[l_index],line[locs[l_index].c2-1:])
                     m = TYPE_ANNOTATION_RE.match(line[locs[l_index].c2-1:])
                     if m is not None:
-                        loc_to_type[loc]=m.group(1)
+                        loc_to_type[locs[l_index]]=m.group(1)
 
                     l_index+=1
                 if l_index==len(locs):
                     break
+
 
     # assign types to signals
     matching: dict[tuple[str],str] = {} # variable to type
@@ -79,7 +81,7 @@ if __name__=="__main__":
     import sys
     import getopt
 
-    opts,posopts=getopt.getopt(sys.argv[1:],"x:w:s:o:dv:",["xml=","vcd=","signals=","output=","debug","verilog-dir=","help"])
+    opts,posopts=getopt.getopt(sys.argv[1:],"x:w:s:o:dv:a:",["xml=","vcd=","signals=","output=","debug","verilog-dir=","values=","help"])
     args={}
 
     if len(posopts)>=1:
@@ -91,8 +93,8 @@ if __name__=="__main__":
 
     for k,v in opts:
         k=k.lstrip("-")
-        if k in "kvsod":
-            args[dict(x="xml",w="vcd",s="signals",o="output",d="debug",v="verilog-dir")[k]]=v
+        if k in "kvsoda":
+            args[dict(x="xml",w="vcd",s="signals",o="output",d="debug",v="verilog-dir",a="values")[k]]=v
         else:
             args[k]=v
     
@@ -106,6 +108,7 @@ Options:
     -s, --signals       Use list of signals, one per line (mutually exclusive with --vcd)
     -o, --output        Output file
     -v, --verilog-dir   Look for files listed in the XML file in this directory, rather than the current working directory
+    -a, --values        Extract all values of each type and store them in this file
     -d, --debug         Print results to stdout
 """)
         exit(0)
@@ -113,22 +116,44 @@ Options:
     assert("xml" in args)
     assert("vcd" in args or "signals" in args)
     assert(not("vcd" in args and "signals" in args))
+    assert("vcd" in args or not "values" in args)
 
     # XML, VCD, OUTPUT
     hierarchy,files=parse_xml(args["xml"])
     if "vcd" in args:
-        signals=get_vcd_signals(args["vcd"])
+        signals,symbols=get_vcd_signals(args["vcd"])
     else:
         with open(args["signals"],"r") as fp:
             signals=list(map(lambda s:tuple(s.strip.split(".")),fp.readlines()))
 
     wd=os.getcwd()
-    matching = match_signals(hierarchy,files,signals,verilog_dir=args["verilog-dir"])
+    matching = match_signals(hierarchy,files,signals,verilog_dir=args.get("verilog-dir"))
     os.chdir(wd)
 
     if "output" in args:
         with open(args["output"],"w") as fp:
             json.dump(matching,fp)
+    
+    if "values" in args and "vcd" in args:
+        
+        for s in symbols:
+            symbols[s]=[".".join(v) for v in symbols[s] if ".".join(v) in matching]
+        for k in list(symbols.keys()):
+            if not symbols[k]:  del symbols[k]
+
+        values=defaultdict(set)
+        for sym,val in get_signal_values(args["vcd"]):
+            match matching.get(".".join(symbols[sym])):
+                case None: pass
+                case ty:
+                    values[ty].add(val)
+        
+        with open(args["values"], "w") as fp:
+            for ty,vals in values.items():
+                fp.write(ty+"\n")
+                fp.write(" ".join(vals)+"\n")
+            
+
 
     if "debug" in args:
         print("SIGNAL TYPES:")
