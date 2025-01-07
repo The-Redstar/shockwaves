@@ -2,6 +2,8 @@
 module WaveFormJSON(ToJSON(toJSON)) where
 
 import WaveFormViewer
+import WaveFormColor (Color(RGB))
+
 import Text.Printf
 import Data.Map (Map,toList)
 import qualified Data.Map as Map
@@ -67,10 +69,10 @@ instance ToJSON VariableInfo where
     toJSON VIReal   = show "Real"
 
 instance ToJSON (String,VariableInfo) where
-    toJSON (name,info) = "["++(show name)++","++(toJSON info)++"]"
+    toJSON (name,info) = "["++show name++","++toJSON info++"]"
 
 instance (ToJSON a) => ToJSON (VariableInfo,a) where
-    toJSON (info,x) = "["++(toJSON info)++","++(toJSON x)++"]"
+    toJSON (info,x) = "["++toJSON info++","++toJSON x++"]"
 
 instance (ToJSON a) => ToJSON (Map String a) where
     toJSON mp = structJSON $ map (\(k,v) -> (k,toJSON v)) $ toList mp

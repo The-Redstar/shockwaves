@@ -13,8 +13,6 @@ module WaveFormViewer (
     ValueKind(..),
     VariableInfo(..),
     TranslationResult(..),SubFieldTranslationResult(..),
-    Color(..),
-    red,yellow,green,cyan,blue,magenta,white,gray,
 ) where
 -- import qualified WaveFormViewer as WFV
 
@@ -25,6 +23,7 @@ import Data.Maybe
 import Data.Data
 import Data.List.Split
 
+import WaveFormColor (Color)
 
 data ValueRepr = VRBit Char | VRBits String | VRString String | VRNotPresent deriving Show
 data ValueKind = VKNormal | VKUndef | VKHighImp | VKCustom Color | VKWarn | VKDontCare | VKWeak deriving Show
@@ -34,16 +33,6 @@ data VariableInfo = VICompound [(String,VariableInfo)] | VIBits | VIBool | VIClo
 data TranslationResult = TranslationResult ValueRepr ValueKind [SubFieldTranslationResult] deriving Show
 data SubFieldTranslationResult = SubFieldTranslationResult String TranslationResult deriving Show
 
-data Color = RGB Int Int Int deriving Show
-
-red     = RGB 255 0 0
-yellow  = RGB 255 255 0
-green   = RGB 0 255 0
-cyan    = RGB 0 255 255
-blue    = RGB 0 0 255
-magenta = RGB 255 0 255
-white   = RGB 255 255 255
-gray    = RGB 127 127 127
 
 
 class Display a where
