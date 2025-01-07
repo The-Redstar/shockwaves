@@ -1,97 +1,134 @@
 
 
-
-
 import xml.etree.ElementTree as ET
 from pprint import pp as pprint
+from collections import namedtuple
 
 
+#type Loc = tuple[str,int,int,int,int]
+#class Loc(tuple):
+#    pass
+Loc = namedtuple("Loc",["file","l1","c1","l2","c2"])
+
+class HierarchyElement:
+    def lookup(self,path,root=None):
+        # default to self as root
+        if root is None:
+            root=self
+        
+        # end of path
+        if not path:
+            return self
+        
+        return self._lookup(path,root)
+
+class Variable(HierarchyElement):
+    __match_args__=("name","loc")
+    def __init__(self,name,loc,tag=None):
+        self.name=name
+        self.loc=loc
+        self.tag=tag
+        self.type=None
+    def _lookup(self,path,_):
+        path=".".join(path)
+        raise KeyError(f"Variable {self.name} has no subelements")
+    def __repr__(self):
+        return "$"+self.name
+
+class Scope(HierarchyElement):
+    __match_args__=("name","children")
+    def __init__(self,name):
+        self.name=name
+        self.children={}
+    def __getitem__(self,item):
+        return self.children[item]
+    def __setitem__(self,item,value):
+        self.children[item]=value
+    def _lookup(self,path,root):
+        return self[path[0]].lookup(path[1:],root)
+    def __repr__(self):
+        return "("+self.name+")"
+
+class ScopeRef(HierarchyElement):
+    __match_args__ = ("name","module")
+    def __init__(self,name,module):
+        self.name=name
+        self.module=module
+    def _lookup(self,path,root):
+        return root[self.module].lookup(path,root)
+    def __repr__(self):
+        return "("+self.name+"->"+self.module+")"
+
+def loc(str) -> Loc:
+    file,r=str.split(",",1)
+    return Loc(file,*map(int,r.split(",")))
 
 
-
-
-def children(el):
-    return [e for e in el.iter() if e is not el]
-
-def find_signals(el,data):
+def parse_hierarchy(el,scope: Scope) -> Scope:
+    #print(el)
     if el.tag=="var":
-        data[el.attrib["name"]]=("var",dict(name=el.attrib["name"],tag=el.attrib.get("tag")))
+        scope[el.attrib["name"]]=Variable(el.attrib["name"],loc(el.attrib["loc"]),tag=el.attrib.get("tag"))
     elif el.tag=="instance":
-        data[el.attrib["name"]]=("module",dict(name=el.attrib["name"],module=el.attrib["defName"]))
-    elif el.tag == "begin" and el.attrib.get("name"):
-        d={}
-        for c in children(el):
-            find_signals(c,d)
-        data[el.attrib["name"]]=d
+        scope[el.attrib["name"]]=ScopeRef(el.attrib["name"],el.attrib["defName"])
+    elif el.tag in ("begin","module") and el.attrib.get("name"):
+        name=el.attrib["name"]
+        subscope=Scope(name)
+        scope[name]=subscope
+        for c in el:
+            parse_hierarchy(c,subscope)
     else:
-        for c in children(el):
-            find_signals(c,data)
+        for c in el:
+            parse_hierarchy(c,scope)
 
-    return data
+    return scope
 
+def parse_files(el) -> dict[str,str]:
+    files={}
+    for f in el:
+        if f.tag=="file":
+            files[f.attrib["id"]]=f.attrib["filename"]
+        else:
+            raise Exception("Unexpected files list structure")
+    return files
 
-
-def lookup(scopes,current_scope,path):
-    key=path[0]
-    path=path[1:]
-    current_scope=current_scope[key]
-    if not path:
-        return current_scope
-    try:
-        current_scope[0]
-    except:
-        pass
-    else:
-        assert(current_scope[0]=="module") # can't look into var
-        current_scope=scopes[current_scope[1]["module"]]
-    return lookup(scopes,current_scope,path)
-
-
-def get_scopes(fname):
+def parse_xml(fname):
     tree=ET.parse(fname)
-
     root=tree.getroot()
 
+    # parse source files
+    files=root.find("files")
+    files=parse_files(files)
+
+    # parse netlist
     netlist=root.find("netlist")
-    scopes={}
-    for child in children(netlist):
-        if child.tag=="module":
-            print("MODULE",child.attrib["name"])
+    hierarchy=parse_hierarchy(netlist,Scope(None))
 
-
-            scopes[child.attrib["name"]]=find_signals(netlist,{})
-    return scopes
-
+    return hierarchy, files
 
 if __name__=="__main__":
-    import os
-    os.chdir(os.path.dirname(__file__))
+    # if run separately, take the XML file as input and print the hierarchy
 
-    scopes=get_scopes("obj_dir/Valu.xml")
-    pprint(scopes)
+    import sys
 
-    print(lookup(scopes,scopes,["alu","genblk1[3]","submodule_test","clk"]))
+    xml = sys.argv[1]
+    hierarchy, files = parse_xml(xml)
+    
+    print("FILES:")
+    for id,fname in files.items():
+        print(id,fname,sep="\t")
+    print()
 
-
-"""
-
-proper way to do this (Haskell/Rust pattern matching)
-
-data Name=String
-data Tag=String
-data Module=String
-
-data ScopeElement = SubScope Name Scope | Var Name Tag  | ModuleRef Name Module
-data Scope = Map Name ScopeElement
-
-lookup global current [] = Just current
-lookup global current (x:xs) = (\current' -> lookup global current' xs) <$> Map.lookup current x
-
-
-
-for all scopes in a VCD:
-parse VCDscope:
-    lookup all vars; if they have annotated data, store that data somewhere
-    recursively lookup scopes (append one to scope stack for every $scope, and pop for every $upscope)
-
-"""
+    def printh(h: HierarchyElement,indent=0):
+        print(" "*indent,end="")
+        match h:
+            case Scope(name,children):
+                print(name)
+                for c in children.values():
+                    printh(c,indent+2)
+            case Variable(name,loc):
+                print(f"$ {name}\t@ {loc}")
+            case ScopeRef(name,module):
+                print(f"{name} -> {module}")
+    
+    print("HIERARCHY:")
+    printh(hierarchy)
