@@ -31,3 +31,7 @@ test/
 
 # Do not include the compiled files
 **/*.pyc
+
+
+### VSCode
+.vscode/
