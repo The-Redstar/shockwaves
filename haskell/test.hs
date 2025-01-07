@@ -1,7 +1,8 @@
 
-
+-- temporary test script meant to illustrate
 
 import WaveFormViewer
+import WaveFormColor
 import WaveFormTranslation
 import WaveFormJSON
 import GHC.Generics
