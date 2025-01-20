@@ -6,6 +6,7 @@ import json
 
 from parse_xml import parse_xml, Scope, Variable, Loc
 from parse_vcd import get_vcd_signals, get_signal_values
+from parse_types import parse_type
 
 
 TYPE_ANNOTATION_RE = re.compile(r"\s*/\*TYPE (.*)\*/")
@@ -81,7 +82,7 @@ if __name__=="__main__":
     import sys
     import getopt
 
-    opts,posopts=getopt.getopt(sys.argv[1:],"x:w:s:o:dv:a:",["xml=","vcd=","signals=","output=","debug","verilog-dir=","values=","help"])
+    opts,posopts=getopt.getopt(sys.argv[1:],"x:w:s:o:dv:a:h:",["xml=","vcd=","signals=","output=","haskell=","debug","verilog-dir=","values=","help"])
     args={}
 
     if len(posopts)>=1:
@@ -93,8 +94,8 @@ if __name__=="__main__":
 
     for k,v in opts:
         k=k.lstrip("-")
-        if k in "kvsoda":
-            args[dict(x="xml",w="vcd",s="signals",o="output",d="debug",v="verilog-dir",a="values")[k]]=v
+        if k in "kvsodah":
+            args[dict(x="xml",w="vcd",s="signals",o="output",d="debug",v="verilog-dir",a="values",h="haskell")[k]]=v
         else:
             args[k]=v
     
@@ -106,7 +107,8 @@ Options:
     -x, --xml           XML file to use
     -w, --vcd           Extract signals from VCD file
     -s, --signals       Use list of signals, one per line (mutually exclusive with --vcd)
-    -o, --output        Output file
+    -o, --output        Output file for signal matching
+    -h, --haskell       Output file for Haskell type conversion table
     -v, --verilog-dir   Look for files listed in the XML file in this directory, rather than the current working directory
     -a, --values        Extract all values of each type and store them in this file
     -d, --debug         Print results to stdout
@@ -133,6 +135,26 @@ Options:
     if "output" in args:
         with open(args["output"],"w") as fp:
             json.dump(matching,fp)
+    
+    if "haskell" in args:
+        types=list(set(matching.values()))
+        imports=set()
+        conversions=[]
+        for ty in types:
+            h,i=parse_type(ty)
+            conversions.append((ty,h))
+            imports.update(i)
+        
+        code=(
+            "\n".join(f"import qualified {i}" for i in imports) +
+            "\n" +
+            "types :: String -> (StructF,TransF)\n" +
+            "types tag = case tag of\n" +
+            "\n".join(f"  {repr(ty)} -> tf @ ({h})" for ty,h in conversions)
+        )
+
+        with open(args["haskell"], "w") as fp:
+            fp.write(code)
     
     if "values" in args and "vcd" in args:
         
