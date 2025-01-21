@@ -29,36 +29,11 @@ instance BitPack Test3 where
     unpack (BV _ 1) = Blue
 
 
-
 -- lookup functions of type using its label
 types :: String -> (StructF,TransF)
 types tag = case tag of
     "Color" -> tf @Test3
     "Test" -> tf @Test
 
--- translationTable :: TranslationTable
--- translationTable = genTable types [
---         ("Color",["0","1"]),
---         ("Test" ,["0000","0111","1010"])
---     ]
 
-translateFile infile outfile = do
-    content <- lines $ readFile infile
-    
-    let translationTable = map (\(a,b) -> (a, words b)) $ pairs content
-        pairs (x:y:r) = (x,y):pairs r
-        pairs _       = []
-
-    let json = toJSON translationTable
-
-    putStrLn "Result"
-    putStrLn $ take 200 json ++ "..."
-    putStrLn $ "Saving to file: "++outfile
-    writeFile outfile json
-
-
-main = do
-    args <- getArg
-    let infile = args !! 0
-    let outfile = args !! 1
-    translateFile infile outfile
+main = translateCmdLine types

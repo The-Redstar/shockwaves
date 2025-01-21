@@ -59,7 +59,28 @@ genTable typeFunc typeValues = Map.fromList $ map genTable' typeValues
         genTable' (ty,vals) = (ty, (struct, Map.fromList $ zip vals $ map trans vals))
             where (struct,trans) = typeFunc ty
 
+translateFile types infile outfile = do
+    putStrLn $ "Reading file: "++infile
+    content <- readFile infile
+    
+    let translationTable = genTable types $ map splitSnd $ pairs $ lines content
+        pairs (x:y:r) = (x,y):pairs r
+        pairs _       = []
+        splitSnd (a,b) = (a,words b)
 
+    let json = toJSON translationTable
+
+    putStrLn "Result"
+    putStrLn $ take 200 json ++ "..."
+    putStrLn $ "Saving to file: "++outfile
+    writeFile outfile json
+
+
+translateCmdLine types = do
+    args <- getArg
+    let infile = args !! 0
+    let outfile = args !! 1
+    translateFile types infile outfile
 
 ------------------- TEST STUFF (so I can use pure haskell in testing)
 
