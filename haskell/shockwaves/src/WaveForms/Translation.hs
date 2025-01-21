@@ -8,10 +8,16 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 
-module WaveFormTranslation (genTable, StructF,TransF,TranslationTable,TypeFunctions(..),    BitPack(..),BitVector(..)) where
+module WaveForms.Translation (
+    genTable, StructF,TransF,TranslationTable, -- generating translations
+    TypeFunctions(tf),                         -- matching types
+    translateFile,translateCmdLine             -- file input output
+) where
 
-import WaveFormViewer
-import WaveFormJSON
+import System (getArgs)
+
+import WaveForms.Viewer
+import WaveForms.JSON
 
 import Data.Map (Map,toList)
 import qualified Data.Map as Map
@@ -19,8 +25,8 @@ import qualified Data.Map as Map
 import GHC.Natural
 import GHC.TypeLits (KnownNat)
 
--- TEMPORARY for testing purposes
-import GHC.Generics
+import Clash.Sized.BitVector (BitVector)
+import Clash.Class.BitPack   (BitSize,unpack)
 
 -- the function signatures, so we can easily return the functions for the specified type
 type StructF = VariableInfo
@@ -82,13 +88,3 @@ translateCmdLine types = do
     let outfile = args !! 1
     translateFile types infile outfile
 
-------------------- TEST STUFF (so I can use pure haskell in testing)
-
-
-
-
-
-class BitPack a where
-    unpack :: BitVector (BitSize a) -> a
-type BitSize a = 5
-data BitVector a = BV Natural Natural

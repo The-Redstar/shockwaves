@@ -5,7 +5,7 @@
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DeriveAnyClass #-} -- to derive Int etc
 
-module WaveFormViewer (
+module WaveForms.Viewer (
     Display(..),
     Split(..),
     AutoSplit,
@@ -23,7 +23,7 @@ import Data.Maybe
 import Data.Data
 import Data.List.Split
 
-import WaveFormColor (Color)
+import WaveForms.Color (Color)
 
 data ValueRepr = VRBit Char | VRBits String | VRString String | VRNotPresent deriving Show
 data ValueKind = VKNormal | VKUndef | VKHighImp | VKCustom Color | VKWarn | VKDontCare | VKWeak deriving Show

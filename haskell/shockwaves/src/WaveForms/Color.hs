@@ -1,11 +1,11 @@
 
-module WaveFormColor (
+module WaveForms.Color (
     Color(..),
     red,yellow,green,cyan,blue,magenta,white,gray,
 ) where
 
 
-data Color = RGB Int Int Int deriving Show
+data Color = RGB Word8 Word8 Word8 deriving Show
 
 red     = RGB 255 0 0
 yellow  = RGB 255 255 0

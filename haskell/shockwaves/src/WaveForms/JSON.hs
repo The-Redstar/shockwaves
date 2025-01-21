@@ -1,8 +1,8 @@
 
-module WaveFormJSON(ToJSON(toJSON)) where
+module WaveForms.JSON(ToJSON(toJSON)) where
 
-import WaveFormViewer
-import WaveFormColor (Color(RGB))
+import WaveForms.Viewer
+import WaveForms.Color (Color(RGB))
 
 import Text.Printf
 import Data.Map (Map,toList)
