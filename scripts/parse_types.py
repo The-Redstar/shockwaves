@@ -27,7 +27,7 @@ def parse_type(ty:str) -> tuple[str,list[str]]:
     """
 
     # replace tuple constructors, because they don't want to work????
-    for i in range(1,16):
+    for i in range(0,64):
         ty=ty.replace("GHC.Tuple.({})".format(","*i),f"Tuple{i}")
 
     # find identifier sources
