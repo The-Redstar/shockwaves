@@ -146,11 +146,13 @@ Options:
             imports.update(i)
         
         code=(
+            "import WaveFormTranslateAll (translateCmdLine)\n\n" +
             "\n".join(f"import qualified {i}" for i in imports) +
             "\n" +
             "types :: String -> (StructF,TransF)\n" +
             "types tag = case tag of\n" +
-            "\n".join(f"  {repr(ty)} -> tf @ ({h})" for ty,h in conversions)
+            "\n".join(f"  {repr(ty)} -> tf @ ({h})" for ty,h in conversions) +
+            "\n\nmain = translateCmdLine types"
         )
 
         with open(args["haskell"], "w") as fp:
