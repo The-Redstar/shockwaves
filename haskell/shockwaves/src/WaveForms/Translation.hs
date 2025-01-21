@@ -1,7 +1,5 @@
 
--- TODO: switch to actual Clash, not haskell with a fake bitvector
-
---{-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE NoNamedFieldPuns #-}
 
@@ -14,10 +12,8 @@ module WaveForms.Translation (
     translateFile,translateCmdLine             -- file input output
 ) where
 
-import System (getArgs)
-
-import WaveForms.Viewer
-import WaveForms.JSON
+import Prelude
+import System.Environment (getArgs)
 
 import Data.Map (Map,toList)
 import qualified Data.Map as Map
@@ -25,8 +21,11 @@ import qualified Data.Map as Map
 import GHC.Natural
 import GHC.TypeLits (KnownNat)
 
-import Clash.Sized.BitVector (BitVector)
-import Clash.Class.BitPack   (BitSize,unpack)
+import Clash.Sized.Internal.BitVector (BitVector(BV))
+import Clash.Class.BitPack   (BitPack,BitSize,unpack)
+
+import WaveForms.Viewer
+import WaveForms.JSON
 
 -- the function signatures, so we can easily return the functions for the specified type
 type StructF = VariableInfo
@@ -83,7 +82,7 @@ translateFile types infile outfile = do
 
 
 translateCmdLine types = do
-    args <- getArg
+    args <- getArgs
     let infile = args !! 0
     let outfile = args !! 1
     translateFile types infile outfile

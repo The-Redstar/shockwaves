@@ -4,6 +4,8 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DeriveAnyClass #-} -- to derive Int etc
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module WaveForms.Viewer (
     Display(..),
@@ -16,6 +18,7 @@ module WaveForms.Viewer (
 ) where
 -- import qualified WaveFormViewer as WFV
 
+import Prelude
 import GHC.Generics
 import GHC.TypeLits
 import Data.Proxy
@@ -24,6 +27,15 @@ import Data.Data
 import Data.List.Split
 
 import WaveForms.Color (Color)
+
+-- for instances of standard types:
+import Clash.Sized.Signed (Signed(..))
+import Clash.Sized.Unsigned (Unsigned(..))
+import Clash.Sized.Vector (Vec(..),toList)
+
+
+
+-- VALUE REPRESENTATION TYPES
 
 data ValueRepr = VRBit Char | VRBits String | VRString String | VRNotPresent deriving Show
 data ValueKind = VKNormal | VKUndef | VKHighImp | VKCustom Color | VKWarn | VKDontCare | VKWeak deriving Show
@@ -34,6 +46,7 @@ data TranslationResult = TranslationResult ValueRepr ValueKind [SubFieldTranslat
 data SubFieldTranslationResult = SubFieldTranslationResult String TranslationResult deriving Show
 
 
+-- MAIN CLASSES
 
 class Display a where
     display :: a -> (ValueRepr,ValueKind)
@@ -59,9 +72,6 @@ class (Display a) => Split a where
     structure = notPresentToStructure $ notPresent @a
 
 
---decode :: (BitPack a) => BitVector -> TranslationResult
---decode bv = translate $ unpack bv
-
 notPresentToStructure (TranslationResult _ _ [])  = VIString
 notPresentToStructure (TranslationResult _ _ sub) = VICompound $ map (\(SubFieldTranslationResult name res) -> (name, notPresentToStructure res)) sub
 
@@ -69,7 +79,7 @@ notPresentToStructure (TranslationResult _ _ sub) = VICompound $ map (\(SubField
 
 
 
-
+-- AUTOMATIC SPLITTING
 
 
 class AutoSplit a where
@@ -143,3 +153,30 @@ instance (                 Split a) => AutoSplitFields (S1 (MetaSel Nothing x y 
 instance AutoSplitFields (U1 p) where
     autoTranslateFields _ n = ([],n)
     autoNotPresentFields n = ([],n)
+
+
+
+-- INSTANCES FOR CLASH TYPES
+
+instance Display (Signed n) where
+instance Split (Signed n) where
+    translate x = TranslationResult repr kind []
+        where (repr,kind) = display x
+    notPresent = TranslationResult VRNotPresent VKNormal []
+
+instance Display (Unsigned n)
+instance Split (Unsigned n) where
+    translate x = TranslationResult repr kind []
+        where (repr,kind) = display x
+    notPresent = TranslationResult VRNotPresent VKNormal []
+
+instance (Show a) => Display (Vec n a)
+instance (KnownNat n, Split a, Show a) => Split (Vec n a) where
+    translate v = TranslationResult repr kind subs
+        where
+            (repr,kind) = display v
+            subs = map (\(i,v) -> SubFieldTranslationResult (show i) (translate v)) $ zip [0..] $ toList v
+
+    notPresent = TranslationResult VRNotPresent VKNormal subs
+        where
+            subs = map (\i -> SubFieldTranslationResult (show i) (notPresent @a)) [0..(natVal $ Proxy @n)]

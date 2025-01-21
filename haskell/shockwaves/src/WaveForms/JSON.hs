@@ -1,5 +1,8 @@
+{-# LANGUAGE FlexibleInstances #-}
 
 module WaveForms.JSON(ToJSON(toJSON)) where
+
+import Prelude
 
 import WaveForms.Viewer
 import WaveForms.Color (Color(RGB))

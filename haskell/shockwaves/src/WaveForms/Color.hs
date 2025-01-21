@@ -4,6 +4,8 @@ module WaveForms.Color (
     red,yellow,green,cyan,blue,magenta,white,gray,
 ) where
 
+import Clash.Prelude
+import Data.Word (Word8)
 
 data Color = RGB Word8 Word8 Word8 deriving Show
 
