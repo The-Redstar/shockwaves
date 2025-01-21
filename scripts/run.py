@@ -70,7 +70,7 @@ if "haskell" in args:
         imports.update(i)
     
     code=(
-        "import WaveFormTranslation(translateCmdLine,StructF,TransF)\n\n" +
+        "import WaveForms.Translation(translateCmdLine,StructF,TransF)\n\n" +
         "\n".join(f"import qualified {i}" for i in imports) +
         "\n" +
         "types :: String -> (StructF,TransF)\n" +
