@@ -15,7 +15,7 @@ module WaveForms.Translation (
 import Prelude
 import System.Environment (getArgs)
 
-import Data.Map (Map,toList)
+import Data.Map (Map)
 import qualified Data.Map as Map
 
 import GHC.Natural
@@ -64,6 +64,8 @@ genTable typeFunc typeValues = Map.fromList $ map genTable' typeValues
         genTable' (ty,vals) = (ty, (struct, Map.fromList $ zip vals $ map trans vals))
             where (struct,trans) = typeFunc ty
 
+
+translateFile :: (String -> (StructF, TransF)) -> String -> String -> IO ()
 translateFile types infile outfile = do
     putStrLn $ "Reading file: "++infile
     content <- readFile infile
@@ -81,6 +83,7 @@ translateFile types infile outfile = do
     writeFile outfile json
 
 
+translateCmdLine :: (String -> (StructF, TransF)) -> IO ()
 translateCmdLine types = do
     args <- getArgs
     let infile = args !! 0

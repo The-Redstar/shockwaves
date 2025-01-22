@@ -29,7 +29,7 @@ instance ToJSON String where
 
 
 instance ToJSON TranslationResult where
-    toJSON (TranslationResult repr kind sub) = structJSON [("val",toJSON repr),("kind",toJSON kind),("subfields",toJSON sub)]
+    toJSON (TranslationResult (repr,kind) sub) = structJSON [("val",toJSON repr),("kind",toJSON kind),("subfields",toJSON sub)]
 
 instance ToJSON ValueRepr where
     toJSON (VRBit c)    = enumJSON "Bit" (c:"")

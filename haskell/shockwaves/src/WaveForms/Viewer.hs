@@ -22,15 +22,12 @@ import Prelude
 import GHC.Generics
 import GHC.TypeLits
 import Data.Proxy
-import Data.Maybe
-import Data.Data
-import Data.List.Split
 
 import WaveForms.Color (Color)
 
 -- for instances of standard types:
-import Clash.Sized.Signed (Signed(..))
-import Clash.Sized.Unsigned (Unsigned(..))
+import Clash.Sized.Signed (Signed)
+import Clash.Sized.Unsigned (Unsigned)
 import Clash.Sized.Vector (Vec(..),toList)
 
 
@@ -42,7 +39,7 @@ data ValueKind = VKNormal | VKUndef | VKHighImp | VKCustom Color | VKWarn | VKDo
 
 data VariableInfo = VICompound [(String,VariableInfo)] | VIBits | VIBool | VIClock | VIString | VIReal deriving Show
 
-data TranslationResult = TranslationResult ValueRepr ValueKind [SubFieldTranslationResult] deriving Show
+data TranslationResult = TranslationResult (ValueRepr,ValueKind) [SubFieldTranslationResult] deriving Show
 data SubFieldTranslationResult = SubFieldTranslationResult String TranslationResult deriving Show
 
 
@@ -62,7 +59,7 @@ class Display a where
 class (Display a) => Split a where
     translate :: a -> TranslationResult
     default translate :: forall x. (Generic a, AutoSplit (Rep a x), Display a) => a -> TranslationResult
-    translate v = autoTranslate ((from  v)::(Rep a x)) (display v)
+    translate v = autoTranslate (from  v::(Rep a x)) (display v)
 
     notPresent :: TranslationResult
     default notPresent :: forall x. (Generic a, AutoSplit (Rep a x)) => TranslationResult
@@ -71,9 +68,10 @@ class (Display a) => Split a where
     structure :: VariableInfo
     structure = notPresentToStructure $ notPresent @a
 
-
-notPresentToStructure (TranslationResult _ _ [])  = VIString
-notPresentToStructure (TranslationResult _ _ sub) = VICompound $ map (\(SubFieldTranslationResult name res) -> (name, notPresentToStructure res)) sub
+notPresentToStructure :: TranslationResult -> VariableInfo
+notPresentToStructure (TranslationResult _ [])  = VIString
+notPresentToStructure (TranslationResult _ sub) = VICompound $ map go sub
+    where go (SubFieldTranslationResult name res) = (name, notPresentToStructure res)
 
 
 
@@ -91,17 +89,17 @@ class AutoSplit a where
     -- autoNotPresent = autoNotPresent @(Rep a x)
 
 instance (AutoSplitConstrs (constrs p)) => AutoSplit (D1 meta constrs p) where
-    autoTranslate (M1 x) (repr,kind) = res
+    autoTranslate (M1 x) rk = res
         where
-            res = case autoTranslateConstrs @(constrs p) x (repr,kind) of
+            res = case autoTranslateConstrs @(constrs p) x rk of
                 [SubFieldTranslationResult _ constr] -> constr --if there is only one variant, directly move into contained value
-                constrs                              -> TranslationResult repr kind constrs
+                constrs                              -> TranslationResult rk constrs
 
     autoNotPresent = res --TranslationResult VRNotPresent VKNormal (autoNotPresentConstrs 0 @consts)
         where
             res = case autoNotPresentConstrs @(constrs p) of
                 [SubFieldTranslationResult _ constr] -> constr --if there is only one variant, directly move into contained value
-                constrs                              -> TranslationResult VRNotPresent VKNormal constrs
+                constrs                              -> TranslationResult (VRNotPresent,VKNormal) constrs
 
 class AutoSplitConstrs a where
     autoTranslateConstrs :: a -> (ValueRepr,ValueKind) -> [SubFieldTranslationResult]
@@ -118,11 +116,11 @@ instance (AutoSplitConstrs (a p), AutoSplitConstrs (b p)) => AutoSplitConstrs ((
     autoNotPresentConstrs = autoNotPresentConstrs @(a p) ++ autoNotPresentConstrs @(b p)
 
 instance (KnownSymbol name,AutoSplitFields (fields p)) => AutoSplitConstrs (C1 (MetaCons name x y) fields p) where
-    autoTranslateConstrs (M1 x) (repr,kind) = [SubFieldTranslationResult (symbolVal (Proxy @name)) $ TranslationResult repr kind fields]
+    autoTranslateConstrs (M1 x) rk = [SubFieldTranslationResult (symbolVal (Proxy @name)) $ TranslationResult rk fields]
         where
             (fields,_) = autoTranslateFields x 0
 
-    autoNotPresentConstrs = [SubFieldTranslationResult (symbolVal (Proxy @name)) $ TranslationResult VRNotPresent VKNormal fields]
+    autoNotPresentConstrs = [SubFieldTranslationResult (symbolVal (Proxy @name)) $ TranslationResult (VRNotPresent,VKNormal) fields]
         where
             (fields,_) = autoNotPresentFields @(fields p) 0
 
@@ -156,35 +154,54 @@ instance AutoSplitFields (U1 p) where
 
 
 -- INSTANCES FOR TUPLES
-instance (Show a, Show b) => Display (a,b)
-instance (Show a, Show b, Show c) => Display (a,b,c)
-instance (Show a, Show b, Show c, Show d) => Display (a,b,c,d)
+instance (Show a0,Show a1) => Display (a0,a1)
+instance (Show a0,Show a1,Show a2) => Display (a0,a1,a2)
+instance (Show a0,Show a1,Show a2,Show a3) => Display (a0,a1,a2,a3)
+instance (Show a0,Show a1,Show a2,Show a3,Show a4) => Display (a0,a1,a2,a3,a4)
+instance (Show a0,Show a1,Show a2,Show a3,Show a4,Show a5) => Display (a0,a1,a2,a3,a4,a5)
+instance (Show a0,Show a1,Show a2,Show a3,Show a4,Show a5,Show a6) => Display (a0,a1,a2,a3,a4,a5,a6)
+instance (Show a0,Show a1,Show a2,Show a3,Show a4,Show a5,Show a6,Show a7) => Display (a0,a1,a2,a3,a4,a5,a6,a7)
+instance (Show a0,Show a1,Show a2,Show a3,Show a4,Show a5,Show a6,Show a7,Show a8) => Display (a0,a1,a2,a3,a4,a5,a6,a7,a8)
+instance (Show a0,Show a1,Show a2,Show a3,Show a4,Show a5,Show a6,Show a7,Show a8,Show a9) => Display (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9)
+instance (Show a0,Show a1,Show a2,Show a3,Show a4,Show a5,Show a6,Show a7,Show a8,Show a9,Show a10) => Display (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10)
+instance (Show a0,Show a1,Show a2,Show a3,Show a4,Show a5,Show a6,Show a7,Show a8,Show a9,Show a10,Show a11) => Display (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11)
+instance (Show a0,Show a1,Show a2,Show a3,Show a4,Show a5,Show a6,Show a7,Show a8,Show a9,Show a10,Show a11,Show a12) => Display (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12)
+instance (Show a0,Show a1,Show a2,Show a3,Show a4,Show a5,Show a6,Show a7,Show a8,Show a9,Show a10,Show a11,Show a12,Show a13) => Display (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13)
+instance (Show a0,Show a1,Show a2,Show a3,Show a4,Show a5,Show a6,Show a7,Show a8,Show a9,Show a10,Show a11,Show a12,Show a13,Show a14) => Display (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14)
 
-instance (Split a, Split b, Show a, Show b) => Split (a,b)
-instance (Split a, Split b, Split c, Show a, Show b, Show c) => Split (a,b,c)
-instance (Split a, Split b, Split c, Split d, Show a, Show b, Show c, Show d) => Split (a,b,c,d)
+instance (Show a0,Split a0,Show a1,Split a1) => Split (a0,a1)
+instance (Show a0,Split a0,Show a1,Split a1,Show a2,Split a2) => Split (a0,a1,a2)
+instance (Show a0,Split a0,Show a1,Split a1,Show a2,Split a2,Show a3,Split a3) => Split (a0,a1,a2,a3)
+instance (Show a0,Split a0,Show a1,Split a1,Show a2,Split a2,Show a3,Split a3,Show a4,Split a4) => Split (a0,a1,a2,a3,a4)
+instance (Show a0,Split a0,Show a1,Split a1,Show a2,Split a2,Show a3,Split a3,Show a4,Split a4,Show a5,Split a5) => Split (a0,a1,a2,a3,a4,a5)
+instance (Show a0,Split a0,Show a1,Split a1,Show a2,Split a2,Show a3,Split a3,Show a4,Split a4,Show a5,Split a5,Show a6,Split a6) => Split (a0,a1,a2,a3,a4,a5,a6)
+instance (Show a0,Split a0,Show a1,Split a1,Show a2,Split a2,Show a3,Split a3,Show a4,Split a4,Show a5,Split a5,Show a6,Split a6,Show a7,Split a7) => Split (a0,a1,a2,a3,a4,a5,a6,a7)
+instance (Show a0,Split a0,Show a1,Split a1,Show a2,Split a2,Show a3,Split a3,Show a4,Split a4,Show a5,Split a5,Show a6,Split a6,Show a7,Split a7,Show a8,Split a8) => Split (a0,a1,a2,a3,a4,a5,a6,a7,a8)
+instance (Show a0,Split a0,Show a1,Split a1,Show a2,Split a2,Show a3,Split a3,Show a4,Split a4,Show a5,Split a5,Show a6,Split a6,Show a7,Split a7,Show a8,Split a8,Show a9,Split a9) => Split (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9)
+instance (Show a0,Split a0,Show a1,Split a1,Show a2,Split a2,Show a3,Split a3,Show a4,Split a4,Show a5,Split a5,Show a6,Split a6,Show a7,Split a7,Show a8,Split a8,Show a9,Split a9,Show a10,Split a10) => Split (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10)
+instance (Show a0,Split a0,Show a1,Split a1,Show a2,Split a2,Show a3,Split a3,Show a4,Split a4,Show a5,Split a5,Show a6,Split a6,Show a7,Split a7,Show a8,Split a8,Show a9,Split a9,Show a10,Split a10,Show a11,Split a11) => Split (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11)
+instance (Show a0,Split a0,Show a1,Split a1,Show a2,Split a2,Show a3,Split a3,Show a4,Split a4,Show a5,Split a5,Show a6,Split a6,Show a7,Split a7,Show a8,Split a8,Show a9,Split a9,Show a10,Split a10,Show a11,Split a11,Show a12,Split a12) => Split (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12)
+instance (Show a0,Split a0,Show a1,Split a1,Show a2,Split a2,Show a3,Split a3,Show a4,Split a4,Show a5,Split a5,Show a6,Split a6,Show a7,Split a7,Show a8,Split a8,Show a9,Split a9,Show a10,Split a10,Show a11,Split a11,Show a12,Split a12,Show a13,Split a13) => Split (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13)
+instance (Show a0,Split a0,Show a1,Split a1,Show a2,Split a2,Show a3,Split a3,Show a4,Split a4,Show a5,Split a5,Show a6,Split a6,Show a7,Split a7,Show a8,Split a8,Show a9,Split a9,Show a10,Split a10,Show a11,Split a11,Show a12,Split a12,Show a13,Split a13,Show a14,Split a14) => Split (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14)
 
 -- INSTANCES FOR CLASH TYPES
 
 instance Display (Signed n) where
 instance Split (Signed n) where
-    translate x = TranslationResult repr kind []
-        where (repr,kind) = display x
-    notPresent = TranslationResult VRNotPresent VKNormal []
+    translate x = TranslationResult (display x) []
+    notPresent = TranslationResult (VRNotPresent,VKNormal) []
 
 instance Display (Unsigned n)
 instance Split (Unsigned n) where
-    translate x = TranslationResult repr kind []
-        where (repr,kind) = display x
-    notPresent = TranslationResult VRNotPresent VKNormal []
+    translate x = TranslationResult (display x) []
+    notPresent = TranslationResult (VRNotPresent,VKNormal) []
 
 instance (Show a) => Display (Vec n a)
 instance (KnownNat n, Split a, Show a) => Split (Vec n a) where
-    translate v = TranslationResult repr kind subs
+    translate v = TranslationResult (display v) subs
         where
-            (repr,kind) = display v
-            subs = map (\(i,v) -> SubFieldTranslationResult (show i) (translate v)) $ zip [0..] $ toList v
+            subs = zipWith (\i s -> SubFieldTranslationResult (show i) (translate s)) [(0::Integer)..] (toList v)
 
-    notPresent = TranslationResult VRNotPresent VKNormal subs
+    notPresent = TranslationResult (VRNotPresent,VKNormal) subs
         where
             subs = map (\i -> SubFieldTranslationResult (show i) (notPresent @a)) [0..(natVal $ Proxy @n)]
