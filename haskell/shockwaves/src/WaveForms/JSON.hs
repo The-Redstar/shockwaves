@@ -9,16 +9,18 @@ import WaveForms.Color (Color(RGB))
 
 import Text.Printf
 import Data.Map (Map,toList)
-import qualified Data.Map as Map
 
 
 structJSON :: [(String,String)] -> String
-structJSON xs = "{" ++a0++ foldr (\a b -> ',':a++b) "}" rest
-    where (a0:rest) = map (\(k,v) -> printf "%s:%s" (show k) v) xs
+structJSON xs = go $ map (\(k,v) -> printf "%s:%s" (show k) v) xs
+    where go [] = "{}"
+          go (a0:rest) = "{" ++a0++ foldr (\a b -> ',':a++b) "}" rest
 
 enumJSON :: (ToJSON a) => String -> a -> String
 enumJSON variant values = structJSON [(variant,toJSON values)]
 
+
+-- | Simple class for turning translation object into JSON.
 class ToJSON a where
     toJSON :: a -> String
 
@@ -29,7 +31,7 @@ instance ToJSON String where
 
 
 instance ToJSON TranslationResult where
-    toJSON (TranslationResult (repr,kind) sub) = structJSON [("val",toJSON repr),("kind",toJSON kind),("subfields",toJSON sub)]
+    toJSON (TranslationResult (r,k) sub) = structJSON [("val",toJSON r),("kind",toJSON k),("subfields",toJSON sub)]
 
 instance ToJSON ValueRepr where
     toJSON (VRBit c)    = enumJSON "Bit" (c:"")
@@ -50,14 +52,15 @@ instance ToJSON Color where
     toJSON (RGB r g b) = printf "[%d,%d,%d,255]" r g b
 
 instance ToJSON [SubFieldTranslationResult] where
-    toJSON [] = "[]"
-    toJSON xs = "[" ++p++ foldr (\a b -> ',':a++b) "]" ps
-        where (p:ps) = map toJSON xs
+    toJSON xs = go $ map toJSON xs
+        where go [] = "[]"
+              go (p:ps) = "[" ++p++ foldr (\a b -> ',':a++b) "]" ps
 
 instance ToJSON [(String,VariableInfo)] where
-    toJSON [] = "[]"
-    toJSON xs = "[" ++ p ++ foldr (\a b -> ',':a++b) "]" ps
-        where (p:ps) = map toJSON xs
+    toJSON xs = go $ map toJSON xs
+        where go [] = "[]"
+              go (p:ps) = "[" ++ p ++ foldr (\a b -> ',':a++b) "]" ps
+
 
 instance ToJSON SubFieldTranslationResult where
     toJSON (SubFieldTranslationResult name res) = structJSON [("name",show name), ("result",toJSON res)]

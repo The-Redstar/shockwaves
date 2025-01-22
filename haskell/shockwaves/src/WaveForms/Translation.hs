@@ -28,12 +28,12 @@ import WaveForms.Viewer
 import WaveForms.JSON
 
 -- the function signatures, so we can easily return the functions for the specified type
-type StructF = VariableInfo
-type TransF = (String -> TranslationResult)
+type StructF = VariableInfo -- ^ StructF is treated as a function returning the variable info.
+type TransF = (String -> TranslationResult) -- ^ Function translating a string of bits into a `TranslationResult`.
 
 type TranslationTable = Map String (VariableInfo,Map String TranslationResult)
 
--- convert bit string to BitVector
+-- | Convert a String of bits to a BitVector
 toBV :: (KnownNat n) => String -> BitVector n
 toBV s = BV m i
     where
@@ -48,15 +48,17 @@ toBV s = BV m i
                     _   -> (1,0)
         (m,i) = toNat $ reverse s
 
--- get functions of a type
+-- | Get translation function for a given type.
+-- | This class is used to only have to specify the type once while translating.
 class TypeFunctions a where
+    -- | Get translation function for the type.
     tf :: (StructF,TransF)
 instance (BitPack a,Split a) => TypeFunctions a where
     tf = (structure @a,translate')
         where translate' val = translate @a $ unpack (toBV val::(BitVector (BitSize a)))
 
--- generate a table of value representations for types
--- input [(typename,[values])]
+-- | Generate a table of value representations for types, using the provided type-label-to-functions table,
+-- | and the list of (type label, list of values) pairs.
 genTable :: (String -> (StructF,TransF)) -> [(String,[String])] -> TranslationTable
 genTable typeFunc typeValues = Map.fromList $ map genTable' typeValues
     where
@@ -64,7 +66,8 @@ genTable typeFunc typeValues = Map.fromList $ map genTable' typeValues
         genTable' (ty,vals) = (ty, (struct, Map.fromList $ zip vals $ map trans vals))
             where (struct,trans) = typeFunc ty
 
-
+-- | Given a function to convert type strings into translation functions for that type,
+-- | turn the values per type from the input file into a translation table.
 translateFile :: (String -> (StructF, TransF)) -> String -> String -> IO ()
 translateFile types infile outfile = do
     putStrLn $ "Reading file: "++infile
@@ -82,7 +85,7 @@ translateFile types infile outfile = do
     putStrLn $ "Saving to file: "++outfile
     writeFile outfile json
 
-
+-- | Run `translateFile` using the first two command line arguments
 translateCmdLine :: (String -> (StructF, TransF)) -> IO ()
 translateCmdLine types = do
     args <- getArgs

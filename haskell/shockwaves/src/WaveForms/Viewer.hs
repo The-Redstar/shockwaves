@@ -30,21 +30,29 @@ import Clash.Sized.Signed (Signed)
 import Clash.Sized.Unsigned (Unsigned)
 import Clash.Sized.Vector (Vec(..),toList)
 
-
-
 -- VALUE REPRESENTATION TYPES
-
+-- | Representation of a value.
 data ValueRepr = VRBit Char | VRBits String | VRString String | VRNotPresent deriving Show
+-- | Determines the way values are displayed. For most signals, this only determines the color,
+-- | but VIBool signals can have lines at different heights.
 data ValueKind = VKNormal | VKUndef | VKHighImp | VKCustom Color | VKWarn | VKDontCare | VKWeak deriving Show
 
+-- | Information about the signal structure. The structure presented must match that of the `TranslationResult`s
+-- | of the value.
+-- | `VICompound` is the only variant allowed to have subsignals.
+-- | `VIBool` and `VIClock` are displayed differently in the waveform viewer.
 data VariableInfo = VICompound [(String,VariableInfo)] | VIBits | VIBool | VIClock | VIString | VIReal deriving Show
 
+-- | A value representation similar to that used in Surfer. The structure must match that of `VariableInfo`.
 data TranslationResult = TranslationResult (ValueRepr,ValueKind) [SubFieldTranslationResult] deriving Show
+-- | A wrapper for naming compound signals.
 data SubFieldTranslationResult = SubFieldTranslationResult String TranslationResult deriving Show
 
 
 -- MAIN CLASSES
 
+-- | Class determining the appearance of a value in the waveform viewer (text and color).
+-- | By default, this uses `Show` and `VKNormal`.
 class Display a where
     display :: a -> (ValueRepr,ValueKind)
     display x = (repr x, kind x)
@@ -56,22 +64,30 @@ class Display a where
     kind :: a -> ValueKind
     kind _ = VKNormal
 
+
+-- | Class for determining the complete translation of a value, including how it is split up.
+-- | The structure can be automatically deduced for types implementing `Generic` with all subtypes implementing `Split` as well.
 class (Display a) => Split a where
+    -- | Translate a value into waveform viewer data.
     translate :: a -> TranslationResult
     default translate :: forall x. (Generic a, AutoSplit (Rep a x), Display a) => a -> TranslationResult
     translate v = autoTranslate (from  v::(Rep a x)) (display v)
 
+    -- | Generate waveform viewer data for when the current value does not exist. Uses `VRNotPresent` for all values.
     notPresent :: TranslationResult
     default notPresent :: forall x. (Generic a, AutoSplit (Rep a x)) => TranslationResult
     notPresent = autoNotPresent @(Rep a x)
 
+    -- | Signal structure of the type.
     structure :: VariableInfo
-    structure = notPresentToStructure $ notPresent @a
+    structure = translationToStructure $ notPresent @a
 
-notPresentToStructure :: TranslationResult -> VariableInfo
-notPresentToStructure (TranslationResult _ [])  = VIString
-notPresentToStructure (TranslationResult _ sub) = VICompound $ map go sub
-    where go (SubFieldTranslationResult name res) = (name, notPresentToStructure res)
+-- | Turns a translation into a structural description. Can be used in conjunction
+-- | with `notPresent` to determine the structure of a type.
+translationToStructure :: TranslationResult -> VariableInfo
+translationToStructure (TranslationResult _ [])  = VIString
+translationToStructure (TranslationResult _ sub) = VICompound $ map go sub
+    where go (SubFieldTranslationResult name res) = (name, translationToStructure res)
 
 
 
@@ -79,7 +95,7 @@ notPresentToStructure (TranslationResult _ sub) = VICompound $ map go sub
 
 -- AUTOMATIC SPLITTING
 
-
+-- | Helper class for autmatically deriving default `Split` instances using `Generic`.
 class AutoSplit a where
     autoTranslate :: a -> (ValueRepr,ValueKind) -> TranslationResult
     autoNotPresent :: TranslationResult
