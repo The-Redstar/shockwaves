@@ -155,6 +155,14 @@ instance AutoSplitFields (U1 p) where
     autoNotPresentFields n = ([],n)
 
 
+-- INSTANCES FOR TUPLES
+instance (Show a, Show b) => Display (a,b)
+instance (Show a, Show b, Show c) => Display (a,b,c)
+instance (Show a, Show b, Show c, Show d) => Display (a,b,c,d)
+
+instance (Split a, Split b, Show a, Show b) => Split (a,b)
+instance (Split a, Split b, Split c, Show a, Show b, Show c) => Split (a,b,c)
+instance (Split a, Split b, Split c, Split d, Show a, Show b, Show c, Show d) => Split (a,b,c,d)
 
 -- INSTANCES FOR CLASH TYPES
 

@@ -8,7 +8,8 @@ from parse_xml import parse_xml, Scope, Variable, Loc
 from parse_vcd import get_vcd_signals, get_signal_values
 
 
-TYPE_ANNOTATION_RE = re.compile(r"\s*/\*TYPE (.*)\*/")
+#TYPE_ANNOTATION_RE = re.compile(r"\s*/\*TYPE (.*)\*/")
+TYPE_ANNOTATION_RE = re.compile(r'clashtype\s*=\s*("(?:(?:(?!(?<!\\)").)*)")')
 
 def match_signals(hierarchy: Scope,files: dict[str,str],signals: list[tuple[str]],verilog_dir: str = None) -> dict[tuple[str],str]:
 
@@ -56,12 +57,13 @@ def match_signals(hierarchy: Scope,files: dict[str,str],signals: list[tuple[str]
         with open(file,"r") as fp:
             l_index=0
             for l,line in enumerate(fp,start=1):
-                while l_index<len(locs) and locs[l_index].l2==l:
+                while l_index<len(locs) and locs[l_index].l1==l: #l2
                     # look for type tag
-                    print(locs[l_index],line[locs[l_index].c2-1:])
-                    m = TYPE_ANNOTATION_RE.match(line[locs[l_index].c2-1:])
+                    #print(locs[l_index],line[:locs[l_index].c1-1])
+                    m = TYPE_ANNOTATION_RE.search(line[:locs[l_index].c1-1])#[locs[l_index].c2-1:])
                     if m is not None:
-                        loc_to_type[locs[l_index]]=m.group(1)
+                        #print(" -> ",m.group(1))
+                        loc_to_type[locs[l_index]]=eval(m.group(1))
 
                     l_index+=1
                 if l_index==len(locs):

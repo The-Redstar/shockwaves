@@ -12,7 +12,7 @@ def get_vcd_signals(fname):
             #print(line,stack)
             line=line.strip()
 
-            x=re.match(r"\$var (?P<type>\S+) (?P<width>\d+) (?P<symbol>\S+) (?P<name>\S+)( (?P<range>)\S+)? \$end",line)
+            x=re.match(r"\$var\s+(?P<type>\S+)\s+(?P<width>\d+)\s+(?P<symbol>\S+)\s+(?P<name>\S+)(?:\s+(?P<range>)\S+)?\s+\$end",line)
             if x:
                 sig=tuple(stack+[x.group("name")])
                 vars.append(sig)

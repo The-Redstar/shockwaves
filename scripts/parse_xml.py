@@ -33,7 +33,7 @@ class Variable(HierarchyElement):
         path=".".join(path)
         raise KeyError(f"Variable {self.name} has no subelements")
     def __repr__(self):
-        return "$"+self.name
+        return "${self.name}"
 
 class Scope(HierarchyElement):
     __match_args__=("name","children")
@@ -47,7 +47,7 @@ class Scope(HierarchyElement):
     def _lookup(self,path,root):
         return self[path[0]].lookup(path[1:],root)
     def __repr__(self):
-        return "("+self.name+")"
+        return f"({self.name})"
 
 class ScopeRef(HierarchyElement):
     __match_args__ = ("name","module")
@@ -57,7 +57,7 @@ class ScopeRef(HierarchyElement):
     def _lookup(self,path,root):
         return root[self.module].lookup(path,root)
     def __repr__(self):
-        return "("+self.name+"->"+self.module+")"
+        return f"({self.name}->{self.module})"
 
 def loc(str) -> Loc:
     file,r=str.split(",",1)
@@ -104,6 +104,19 @@ def parse_xml(fname):
     hierarchy=parse_hierarchy(netlist,Scope(None))
 
     return hierarchy, files
+
+
+def printh(h: HierarchyElement,indent=0):
+        print(" "*indent,end="")
+        match h:
+            case Scope(name,children):
+                print(name)
+                for c in children.values():
+                    printh(c,indent+2)
+            case Variable(name,loc):
+                print(f"$ {name}\t@ {loc}")
+            case ScopeRef(name,module):
+                print(f"{name} -> {module}")
 
 if __name__=="__main__":
     # if run separately, take the XML file as input and print the hierarchy

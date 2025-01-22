@@ -1,8 +1,10 @@
 # run as command in terminal
 import sys
 import getopt
+import json
+from collections import defaultdict
 
-from parse_xml import parse_xml
+from parse_xml import parse_xml, printh
 from parse_vcd import get_vcd_signals, get_signal_values
 from parse_types import parse_type
 from match_signals import match_signals
@@ -47,14 +49,22 @@ assert("vcd" in args or not "values" in args)
 
 # XML, VCD, OUTPUT
 hierarchy,files=parse_xml(args["xml"])
+if "debug" in args:
+    print("HIERARCHY:")
+    printh(hierarchy)
+    print("FILES:",files)
+
 if "vcd" in args:
     signals,symbols=get_vcd_signals(args["vcd"])
 else:
     with open(args["signals"],"r") as fp:
         signals=list(map(lambda s:tuple(s.strip.split(".")),fp.readlines()))
+if "debug" in args:
+    print("SIGNALS:",signals)
 
 matching = match_signals(hierarchy,files,signals,verilog_dir=args.get("verilog-dir"))
-
+if "debug" in args:
+    print("MATCHED SIGNALS:",matching)
 
 if "output" in args:
     with open(args["output"],"w") as fp:
@@ -70,13 +80,16 @@ if "haskell" in args:
         imports.update(i)
     
     code=(
-        "import WaveForms.Translation(translateCmdLine,StructF,TransF)\n\n" +
+        "module Shockwaves where\n\n" +
+        "import Prelude\n" +
+        "import WaveForms.Translation(translateCmdLine,StructF,TransF,TypeFunctions(tf))\n\n" +
         "\n".join(f"import qualified {i}" for i in imports) +
-        "\n" +
+        "\n\n" +
         "types :: String -> (StructF,TransF)\n" +
         "types tag = case tag of\n" +
-        "\n".join(f"  {repr(ty)} -> tf @ ({h})" for ty,h in conversions) +
-        "\n\nmain = translateCmdLine types"
+        "\n".join(f"  {json.dumps(ty)} -> tf @({h})" for ty,h in conversions) +
+        "\n\n" +
+        "main = translateCmdLine types"
     )
 
     with open(args["haskell"], "w") as fp:
@@ -106,4 +119,4 @@ if "values" in args and "vcd" in args:
 if "debug" in args:
     print("SIGNAL TYPES:")
     for sig,type in matching.items():
-        print(sig,type)
+        print(sig,"::",type)
