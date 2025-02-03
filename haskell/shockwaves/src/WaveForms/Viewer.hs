@@ -125,7 +125,7 @@ instance (AutoSplitConstrs (a p), AutoSplitConstrs (b p)) => AutoSplitConstrs ((
     autoTranslateConstrs (L1 x) rk = autoTranslateConstrs  @(a p) x rk ++ autoNotPresentConstrs @(b p)
     autoTranslateConstrs (R1 x) rk = autoNotPresentConstrs @(a p)      ++ autoTranslateConstrs  @(b p) x rk
 
-    -- do not include N/A constructors to svae on space
+    -- do not include N/A constructors to save on space
     --autoTranslateConstrs (L1 x) rk = autoTranslateConstrs  @(a p) x rk
     --autoTranslateConstrs (R1 x) rk = autoTranslateConstrs  @(b p) x rk
 
