@@ -44,10 +44,10 @@ main = do
   case data of
     Left msg ->
       error msg
-    Right (traceMap,translationTable) ->
-      writeFile "mainCounter.vcd" contents
-	  writeFile "mainCounter.types.json" contents
-	  writeFile "mainCounter.trans.json" $ toJSON translationTable
+    Right (vcd,types,trans) ->
+      writeFile "mainCounter.vcd" vcd
+	  writeFile "mainCounter.types.json" types
+	  writeFile "mainCounter.trans.json" trans
 @
 -}
 {-# LANGUAGE CPP #-}
@@ -140,6 +140,9 @@ import           GHC.TypeLits          (KnownNat, type (+))
 import           System.IO.Unsafe      (unsafePerformIO)
 import           Type.Reflection       (Typeable, TypeRep, typeRep)
 
+
+import qualified Debug.Trace as DB
+
 #ifdef CABAL
 import qualified Data.Version
 import qualified Paths_clash_prelude
@@ -218,7 +221,8 @@ traceSignal# maps period traceName signal =
   addTrans t = Map.insert traceTypeName
       (s, Map.union translations translations') t -- add values to value list
     where (s,translations) = Map.findWithDefault (structure @a, Map.empty) traceTypeName t
-          translations' = Map.fromList $ map (\(bits,val)->(show bits, val)) trace
+          translations' = Map.fromList $ map (\(bits,val)->("123", TranslationResult (VRString "???",VKNormal) [])) trace
+          -- [("123", TranslationResult (VRString "???",VKNormal) [])]
   traceTypeName = show (typeRep @a)
 
 -- See: https://github.com/clash-lang/clash-compiler/pull/2511
@@ -379,7 +383,7 @@ dumpAnnotatedVCD##
   -- ^ (offset, number of samples)
   -> DataMaps
   -> UTCTime
-  -> Either String Text.Text
+  -> Either String (Text.Text,Text.Text,Text.Text)
 dumpAnnotatedVCD## (offset, cycles) (traceMap,transMap) now
   | offset < 0 =
       error $ "dumpAnnotatedVCD: offset was " ++ show offset ++ ", but cannot be negative."
@@ -394,21 +398,27 @@ dumpAnnotatedVCD## (offset, cycles) (traceMap,transMap) now
                      , "non-printable ASCII characters, which is not"
                      , "supported by VCD." ]
   | otherwise =
-      Right $ Text.unlines [ Text.unwords headerDate
-                           , Text.unwords headerVersion
-                           , Text.unwords headerComment
-                           , Text.pack $ unwords headerTimescale
-                           , "$scope module logic $end"
-                           , Text.intercalate "\n" headerWires
-                           , "$upscope $end"
-                           , "$enddefinitions $end"
-                           , "#0"
-                           , "$dumpvars"
-                           , Text.intercalate "\n" initValues
-                           , "$end"
-                           , Text.intercalate "\n" $ catMaybes bodyParts
-                           ]
+      Right (vcd,types,trans)
  where
+  vcd = Text.unlines [ Text.unwords headerDate
+                     , Text.unwords headerVersion
+                     , Text.unwords headerComment
+                     , Text.pack $ unwords headerTimescale
+                     , "$scope module logic $end"
+                     , Text.intercalate "\n" headerWires
+                     , "$upscope $end"
+                     , "$enddefinitions $end"
+                     , "#0"
+                     , "$dumpvars"
+                     , Text.intercalate "\n" initValues
+                     , "$end"
+                     , Text.intercalate "\n" $ catMaybes bodyParts
+                     ]
+
+  types = Text.pack $ toJSON $ fmap (\(_rep,ty,_period,_width,_vals) -> ty) traceMap
+  trans = Text.pack $ toJSON (DB.trace (show "transMap") transMap)
+
+
   offensiveNames = filter (any (not . printable)) traceNames
 
   labels = map chr [33..126]
@@ -504,10 +514,10 @@ dumpAnnotatedVCD#
   -- ^ (One of) the output(s) the circuit containing the traces
   -> [String]
   -- ^ The names of the traces you definitely want to be dumped to the VCD file
-  -> IO (Either String Text.Text)
-dumpAnnotatedVCD# dataMap slice signal traceNames = do
-  waitForTraces# dataMap signal traceNames
-  m <- readIORef dataMap
+  -> IO (Either String (Text.Text,Text.Text,Text.Text))
+dumpAnnotatedVCD# dataMaps slice signal traceNames = do
+  waitForTraces# dataMaps signal traceNames
+  m <- readIORef dataMaps
   fmap (dumpAnnotatedVCD## slice m) getCurrentTime
 
 -- | Produce a four-state VCD (Value Change Dump) according to IEEE
@@ -534,7 +544,7 @@ dumpAnnotatedVCD
   -- ^ (One of) the outputs of the circuit containing the traces
   -> [String]
   -- ^ The names of the traces you definitely want to be dumped in the VCD file
-  -> IO (Either String Text.Text)
+  -> IO (Either String (Text.Text,Text.Text,Text.Text))
 dumpAnnotatedVCD = dumpAnnotatedVCD# dataMaps#
 
 -- | Dump a number of samples to a replayable bytestring.
