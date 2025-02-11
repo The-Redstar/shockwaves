@@ -34,6 +34,7 @@ import Clash.XException     (XException(..),forceX, NFDataX)
 import Clash.Sized.Signed   (Signed)
 import Clash.Sized.Unsigned (Unsigned)
 import Clash.Sized.Vector   (Vec(..),toList)
+import Clash.Prelude (BitVector, Bit, Index, bv2v)
 
 -- VALUE REPRESENTATION TYPES
 -- | Representation of a value.
@@ -215,7 +216,26 @@ instance (Show a0,Split a0,Show a1,Split a1,Show a2,Split a2,Show a3,Split a3,Sh
 instance (Show a0,Split a0,Show a1,Split a1,Show a2,Split a2,Show a3,Split a3,Show a4,Split a4,Show a5,Split a5,Show a6,Split a6,Show a7,Split a7,Show a8,Split a8,Show a9,Split a9,Show a10,Split a10,Show a11,Split a11,Show a12,Split a12,Show a13,Split a13) => Split (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13)
 instance (Show a0,Split a0,Show a1,Split a1,Show a2,Split a2,Show a3,Split a3,Show a4,Split a4,Show a5,Split a5,Show a6,Split a6,Show a7,Split a7,Show a8,Split a8,Show a9,Split a9,Show a10,Split a10,Show a11,Split a11,Show a12,Split a12,Show a13,Split a13,Show a14,Split a14) => Split (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14)
 
+-- INSTANCES FOR OTHER STANDARD HASKELL TYPES
+
+instance Display Bool where
+    repr x = VRBit (if x then '1' else '0')
+instance Split Bool where
+    translate x = TranslationResult (safeDisplay x) []
+    notPresent = TranslationResult (VRNotPresent,VKNormal) []
+    structure = VIBool
+
+instance (Show a) => Display (Maybe a)
+instance (Show a, Split a) => Split (Maybe a) where
+    notPresent = TranslationResult (VRNotPresent,VKNormal) [SubFieldTranslationResult "Just" (notPresent @a)]
+
 -- INSTANCES FOR CLASH TYPES
+
+instance Display Bit
+instance Split Bit where
+    translate x = TranslationResult (safeDisplay x) []
+    notPresent = TranslationResult (VRNotPresent,VKNormal) []
+    structure = VIBool
 
 instance Display (Signed n) where
 instance Split (Signed n) where
@@ -224,6 +244,11 @@ instance Split (Signed n) where
 
 instance Display (Unsigned n)
 instance Split (Unsigned n) where
+    translate x = TranslationResult (safeDisplay x) []
+    notPresent = TranslationResult (VRNotPresent,VKNormal) []
+
+instance Display (Index n)
+instance Split (Index n) where
     translate x = TranslationResult (safeDisplay x) []
     notPresent = TranslationResult (VRNotPresent,VKNormal) []
 
@@ -236,3 +261,8 @@ instance (KnownNat n, Split a, Show a) => Split (Vec n a) where
     notPresent = TranslationResult (VRNotPresent,VKNormal) subs
         where
             subs = map (\i -> SubFieldTranslationResult (show i) (notPresent @a)) [0..(natVal $ Proxy @n)]
+
+instance (KnownNat n) => Display (BitVector n)
+instance (KnownNat n) => Split (BitVector n) where
+    translate = translate . bv2v
+    notPresent = notPresent @(Vec n Bit)
