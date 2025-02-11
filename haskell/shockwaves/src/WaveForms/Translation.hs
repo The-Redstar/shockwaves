@@ -55,7 +55,7 @@ class TypeFunctions a where
     tf :: (StructF,TransF)
 instance (BitPack a,Split a) => TypeFunctions a where
     tf = (structure @a,translate')
-        where translate' val = translate @a $ unpack (toBV val::(BitVector (BitSize a)))
+        where translate' val = safeTranslate @a $ unpack (toBV val::(BitVector (BitSize a)))
 
 -- | Generate a table of value representations for types, using the provided type-label-to-functions table,
 -- | and the list of (type label, list of values) pairs.

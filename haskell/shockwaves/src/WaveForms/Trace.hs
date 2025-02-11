@@ -107,7 +107,7 @@ import           Clash.XException      (deepseqX, NFDataX)
 import           Clash.Sized.Internal.BitVector
   (BitVector(BV))
 
-import           WaveForms.Viewer      (Split (structure,translate),TranslationResult,VariableInfo)
+import           WaveForms.Viewer      (Split (structure,safeTranslate),TranslationResult,VariableInfo)
 import           WaveForms.JSON        (toJSON)
 
 -- Haskell / GHC:
@@ -175,7 +175,7 @@ instance KnownNat n => ShowSimple (BitVector n) where
 
     showBit 0 0 = '0'
     showBit 0 1 = '1'
-    showBit _ _ = '.'
+    showBit _ _ = 'x'
 
 mkTrace
   :: HasCallStack
@@ -187,7 +187,7 @@ mkTrace
 mkTrace signal = map go $ sample signal--sample (unsafeToTup . pack <$> signal)
  where
   unsafeToTup (BV mask value) = (mask, value)
-  go x = (unsafeToTup bv, showSimple bv, translate x)
+  go x = (unsafeToTup bv, showSimple bv, safeTranslate x)
     where bv = pack x
 
 
