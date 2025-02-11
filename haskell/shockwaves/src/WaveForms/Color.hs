@@ -7,9 +7,8 @@ module WaveForms.Color (
 import Clash.Prelude
 import Data.Word (Word8)
 
-
 -- | Simple RGB representation used for custom signal colors.
-data Color = RGB Word8 Word8 Word8 deriving Show
+data Color = RGB Word8 Word8 Word8 deriving (Show,Generic,NFDataX)
 
 -- | #ff0000
 red::Color

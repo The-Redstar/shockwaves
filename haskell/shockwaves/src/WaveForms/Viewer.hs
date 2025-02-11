@@ -23,19 +23,24 @@ import GHC.Generics
 import GHC.TypeLits
 import Data.Proxy
 
-import WaveForms.Color (Color)
+import WaveForms.Color      (Color)
+
+-- undefined handling
+import System.IO.Unsafe     (unsafeDupablePerformIO)
+import Control.Exception    (catch,evaluate)
+import Clash.XException     (XException(..),forceX, NFDataX)
 
 -- for instances of standard types:
-import Clash.Sized.Signed (Signed)
+import Clash.Sized.Signed   (Signed)
 import Clash.Sized.Unsigned (Unsigned)
-import Clash.Sized.Vector (Vec(..),toList)
+import Clash.Sized.Vector   (Vec(..),toList)
 
 -- VALUE REPRESENTATION TYPES
 -- | Representation of a value.
-data ValueRepr = VRBit Char | VRBits String | VRString String | VRNotPresent deriving Show
+data ValueRepr = VRBit Char | VRBits String | VRString String | VRNotPresent deriving (Show,Generic,NFDataX)
 -- | Determines the way values are displayed. For most signals, this only determines the color,
 -- | but VIBool signals can have lines at different heights.
-data ValueKind = VKNormal | VKUndef | VKHighImp | VKCustom Color | VKWarn | VKDontCare | VKWeak deriving Show
+data ValueKind = VKNormal | VKUndef | VKHighImp | VKCustom Color | VKWarn | VKDontCare | VKWeak deriving (Show,Generic,NFDataX)
 
 -- | Information about the signal structure. The structure presented must match that of the `TranslationResult`s
 -- | of the value.
@@ -44,9 +49,9 @@ data ValueKind = VKNormal | VKUndef | VKHighImp | VKCustom Color | VKWarn | VKDo
 data VariableInfo = VICompound [(String,VariableInfo)] | VIBits | VIBool | VIClock | VIString | VIReal deriving Show
 
 -- | A value representation similar to that used in Surfer. The structure must match that of `VariableInfo`.
-data TranslationResult = TranslationResult (ValueRepr,ValueKind) [SubFieldTranslationResult] deriving Show
+data TranslationResult = TranslationResult (ValueRepr,ValueKind) [SubFieldTranslationResult] deriving (Show,Generic,NFDataX)
 -- | A wrapper for naming compound signals.
-data SubFieldTranslationResult = SubFieldTranslationResult String TranslationResult deriving Show
+data SubFieldTranslationResult = SubFieldTranslationResult String TranslationResult deriving (Show,Generic,NFDataX)
 
 
 -- MAIN CLASSES
@@ -64,6 +69,9 @@ class Display a where
     kind :: a -> ValueKind
     kind _ = VKNormal
 
+    safeDisplay :: a -> (ValueRepr,ValueKind)
+    safeDisplay x = unsafeDupablePerformIO (catch (evaluate $ forceX $ display x)
+                                        (\(XException _) -> return (VRString "undefined",VKUndef)))
 
 -- | Class for determining the complete translation of a value, including how it is split up.
 -- | The structure can be automatically deduced for types implementing `Generic` with all subtypes implementing `Split` as well.
@@ -71,7 +79,7 @@ class (Display a) => Split a where
     -- | Translate a value into waveform viewer data.
     translate :: a -> TranslationResult
     default translate :: forall x. (Generic a, AutoSplit (Rep a x), Display a) => a -> TranslationResult
-    translate v = autoTranslate (from  v::(Rep a x)) (display v)
+    translate v = autoTranslate (from  v::(Rep a x)) (safeDisplay v)
 
     -- | Generate waveform viewer data for when the current value does not exist. Uses `VRNotPresent` for all values.
     notPresent :: TranslationResult
@@ -81,6 +89,13 @@ class (Display a) => Split a where
     -- | Signal structure of the type.
     structure :: VariableInfo
     structure = translationToStructure $ notPresent @a
+
+    safeTranslate :: a -> TranslationResult
+    safeTranslate x = unsafeDupablePerformIO (catch (evaluate $ forceX $ translate x)
+                                            (\(XException _) -> case notPresent @a of
+                                                                TranslationResult _ sub -> return $ TranslationResult (VRString "undefined",VKUndef) sub
+                                            ))
+
 
 -- | Turns a translation into a structural description. Can be used in conjunction
 -- | with `notPresent` to determine the structure of a type.
@@ -157,11 +172,11 @@ instance (AutoSplitFields (a p), AutoSplitFields (b p)) => AutoSplitFields ((a :
 
 instance (KnownSymbol name,Split a) => AutoSplitFields (S1 (MetaSel (Just name) x y z) (Rec0 a) p) where
     autoTranslateFields M1{unM1=K1{unK1=x}} n = ([SubFieldTranslationResult (symbolVal $ Proxy @name) fieldtrans], n+1)
-        where fieldtrans = translate x
+        where fieldtrans = safeTranslate x
     autoNotPresentFields n = ([SubFieldTranslationResult (symbolVal $ Proxy @name) (notPresent @a)], n+1)
 instance (                 Split a) => AutoSplitFields (S1 (MetaSel Nothing x y z) (Rec0 a) p) where
     autoTranslateFields M1{unM1=K1{unK1=x}} n = ([SubFieldTranslationResult (show n                 ) fieldtrans], n+1)
-        where fieldtrans = translate x
+        where fieldtrans = safeTranslate x
     autoNotPresentFields n = ([SubFieldTranslationResult (show n                 ) (notPresent @a)], n+1)
 
 instance AutoSplitFields (U1 p) where
@@ -204,19 +219,19 @@ instance (Show a0,Split a0,Show a1,Split a1,Show a2,Split a2,Show a3,Split a3,Sh
 
 instance Display (Signed n) where
 instance Split (Signed n) where
-    translate x = TranslationResult (display x) []
+    translate x = TranslationResult (safeDisplay x) []
     notPresent = TranslationResult (VRNotPresent,VKNormal) []
 
 instance Display (Unsigned n)
 instance Split (Unsigned n) where
-    translate x = TranslationResult (display x) []
+    translate x = TranslationResult (safeDisplay x) []
     notPresent = TranslationResult (VRNotPresent,VKNormal) []
 
 instance (Show a) => Display (Vec n a)
 instance (KnownNat n, Split a, Show a) => Split (Vec n a) where
-    translate v = TranslationResult (display v) subs
+    translate v = TranslationResult (safeDisplay v) subs
         where
-            subs = zipWith (\i s -> SubFieldTranslationResult (show i) (translate s)) [(0::Integer)..] (toList v)
+            subs = zipWith (\i s -> SubFieldTranslationResult (show i) (safeTranslate s)) [(0::Integer)..] (toList v)
 
     notPresent = TranslationResult (VRNotPresent,VKNormal) subs
         where
