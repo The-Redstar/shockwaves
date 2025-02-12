@@ -26,9 +26,11 @@ import Data.Proxy
 import WaveForms.Color      (Color)
 
 -- undefined handling
-import System.IO.Unsafe     (unsafeDupablePerformIO)
-import Control.Exception    (catch,evaluate)
-import Clash.XException     (XException(..),forceX, NFDataX)
+-- import System.IO.Unsafe     (unsafeDupablePerformIO)
+-- import Control.Exception    (catch,evaluate)
+import Control.DeepSeq      (NFData)
+import Clash.XException     (NFDataX, hasX)
+
 
 -- for instances of standard types:
 import Clash.Sized.Signed   (Signed)
@@ -38,10 +40,10 @@ import Clash.Prelude (BitVector, Bit, Index, bv2v)
 
 -- VALUE REPRESENTATION TYPES
 -- | Representation of a value.
-data ValueRepr = VRBit Char | VRBits String | VRString String | VRNotPresent deriving (Show,Generic,NFDataX)
+data ValueRepr = VRBit Char | VRBits String | VRString String | VRNotPresent deriving (Show,Generic,NFData,NFDataX)
 -- | Determines the way values are displayed. For most signals, this only determines the color,
 -- | but VIBool signals can have lines at different heights.
-data ValueKind = VKNormal | VKUndef | VKHighImp | VKCustom Color | VKWarn | VKDontCare | VKWeak deriving (Show,Generic,NFDataX)
+data ValueKind = VKNormal | VKUndef | VKHighImp | VKCustom Color | VKWarn | VKDontCare | VKWeak deriving (Show,Generic,NFData,NFDataX)
 
 -- | Information about the signal structure. The structure presented must match that of the `TranslationResult`s
 -- | of the value.
@@ -50,9 +52,9 @@ data ValueKind = VKNormal | VKUndef | VKHighImp | VKCustom Color | VKWarn | VKDo
 data VariableInfo = VICompound [(String,VariableInfo)] | VIBits | VIBool | VIClock | VIString | VIReal deriving Show
 
 -- | A value representation similar to that used in Surfer. The structure must match that of `VariableInfo`.
-data TranslationResult = TranslationResult (ValueRepr,ValueKind) [SubFieldTranslationResult] deriving (Show,Generic,NFDataX)
+data TranslationResult = TranslationResult (ValueRepr,ValueKind) [SubFieldTranslationResult] deriving (Show,Generic,NFData,NFDataX)
 -- | A wrapper for naming compound signals.
-data SubFieldTranslationResult = SubFieldTranslationResult String TranslationResult deriving (Show,Generic,NFDataX)
+data SubFieldTranslationResult = SubFieldTranslationResult String TranslationResult deriving (Show,Generic,NFData,NFDataX)
 
 
 -- MAIN CLASSES
@@ -71,8 +73,11 @@ class Display a where
     kind _ = VKNormal
 
     safeDisplay :: a -> (ValueRepr,ValueKind)
-    safeDisplay x = unsafeDupablePerformIO (catch (evaluate $ forceX $ display x)
-                                        (\(XException _) -> return (VRString "undefined",VKUndef)))
+    safeDisplay x = case hasX $ display x of
+        Right y -> y
+        Left _ -> (VRString "undefined",VKUndef)
+    -- safeDisplay x = unsafeDupablePerformIO (catch (evaluate $ forceX $ display x)
+    --                                        (\(XException _) -> return (VRString "undefined",VKUndef)))
 
 -- | Class for determining the complete translation of a value, including how it is split up.
 -- | The structure can be automatically deduced for types implementing `Generic` with all subtypes implementing `Split` as well.
@@ -92,10 +97,14 @@ class (Display a) => Split a where
     structure = translationToStructure $ notPresent @a
 
     safeTranslate :: a -> TranslationResult
-    safeTranslate x = unsafeDupablePerformIO (catch (evaluate $ forceX $ translate x)
-                                            (\(XException _) -> case notPresent @a of
-                                                                TranslationResult _ sub -> return $ TranslationResult (VRString "undefined",VKUndef) sub
-                                            ))
+    safeTranslate x = case hasX $ translate x of
+        Right y -> y
+        Left _ -> case notPresent @a of
+                    TranslationResult _ sub -> TranslationResult (VRString "undefined",VKUndef) sub
+    -- safeTranslate x = unsafeDupablePerformIO (catch (evaluate $ forceX $ translate x)
+    --                                          (\(XException _) -> case notPresent @a of
+    --                                                                TranslationResult _ sub -> return $ TranslationResult (VRString "undefined",VKUndef) sub
+    --                                          ))
 
 
 -- | Turns a translation into a structural description. Can be used in conjunction
@@ -227,7 +236,26 @@ instance Split Bool where
 
 instance (Show a) => Display (Maybe a)
 instance (Show a, Split a) => Split (Maybe a) where
+    translate x = TranslationResult (safeDisplay x) [SubFieldTranslationResult "Just" (split x)]
+        where split Nothing = notPresent @a
+              split (Just y) = safeTranslate y
     notPresent = TranslationResult (VRNotPresent,VKNormal) [SubFieldTranslationResult "Just" (notPresent @a)]
+
+instance (Show a, Show b) => Display (Either a b)
+instance (Show  a, Split a, Show b, Split b) => Split (Either a b) where
+    translate x = TranslationResult (safeDisplay x) (split x)
+        where split (Left y) = [
+                    SubFieldTranslationResult "Left" (safeTranslate y),
+                    SubFieldTranslationResult "Right" $ notPresent @b
+                ]
+              split (Right y) = [
+                    SubFieldTranslationResult "Left" $ notPresent @a,
+                    SubFieldTranslationResult "Right" (safeTranslate y)
+                ]
+    notPresent = TranslationResult (VRNotPresent,VKNormal) [
+        SubFieldTranslationResult "Left" $ notPresent @a,
+        SubFieldTranslationResult "Right" $ notPresent @b
+      ]
 
 -- INSTANCES FOR CLASH TYPES
 
