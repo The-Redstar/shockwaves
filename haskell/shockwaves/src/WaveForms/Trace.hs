@@ -132,7 +132,8 @@ import           GHC.Natural           (Natural)
 import           GHC.Stack             (HasCallStack)
 import           GHC.TypeLits          (KnownNat, type (+))
 import           System.IO.Unsafe      (unsafePerformIO)
-import           Type.Reflection       (Typeable, TypeRep, typeRep)
+import           Type.Reflection       (Typeable, TypeRep, typeRep, typeRepTyCon)
+import           Data.Typeable         (tyConModule)
 
 #ifdef CABAL
 import qualified Data.Version
@@ -216,7 +217,7 @@ traceSignal# traceMap period traceName signal =
       ( Map.insert
           traceName
           ( encode (typeRep @a)
-          , show (typeRep @a)
+          , tyConModule $ typeRepTyCon (typeRep @a) --show (typeRep @a)
           , structure @a
           , period
           , width
