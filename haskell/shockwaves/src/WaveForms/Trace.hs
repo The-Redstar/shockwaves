@@ -217,7 +217,7 @@ traceSignal# traceMap period traceName signal =
       ( Map.insert
           traceName
           ( encode (typeRep @a)
-          , tyConModule $ typeRepTyCon (typeRep @a) --show (typeRep @a)
+          , show $ encode (typeRep @a)
           , structure @a
           , period
           , width
