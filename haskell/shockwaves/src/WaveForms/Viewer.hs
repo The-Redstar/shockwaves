@@ -43,7 +43,15 @@ import Clash.Prelude (BitVector, Bit, Index, bv2v)
 data ValueRepr = VRBit Char | VRBits String | VRString String | VRNotPresent deriving (Show,Generic,NFData,NFDataX)
 -- | Determines the way values are displayed. For most signals, this only determines the color,
 -- | but VIBool signals can have lines at different heights.
-data ValueKind = VKNormal | VKUndef | VKHighImp | VKCustom Color | VKWarn | VKDontCare | VKWeak deriving (Show,Generic,NFData,NFDataX)
+data ValueKind
+    = VKNormal        -- ^ Green
+    | VKUndef         -- ^ Red
+    | VKHighImp       -- ^ Yellow
+    | VKCustom Color  -- ^ Any
+    | VKWarn          -- ^ Red
+    | VKDontCare      -- ^ Blue
+    | VKWeak          -- ^ Gray
+  deriving (Show,Generic,NFData,NFDataX)
 
 -- | Information about the signal structure. The structure presented must match that of the `TranslationResult`s
 -- | of the value.

@@ -9,6 +9,7 @@ import WaveForms.Color (Color(RGB))
 
 import Text.Printf
 import Data.Map (Map,toList)
+import Data.Maybe (catMaybes)
 
 
 structJSON :: [(String,String)] -> String
@@ -31,22 +32,30 @@ instance ToJSON String where
 
 
 instance ToJSON TranslationResult where
-    toJSON (TranslationResult (r,k) sub) = structJSON [("val",toJSON r),("kind",toJSON k),("subfields",toJSON sub)]
+    toJSON (TranslationResult (r,k) sub) = structJSON $ catMaybes [
+        Just ("v",toJSON r),
+        case k of
+            VKNormal -> Nothing
+            _ -> Just ("k",toJSON k),
+        case sub of
+            [] -> Nothing
+            _ -> Just ("s",toJSON sub)
+      ]
 
 instance ToJSON ValueRepr where
-    toJSON (VRBit c)    = enumJSON "Bit" (c:"")
-    toJSON (VRBits s)   = enumJSON "Bits" s
-    toJSON (VRString s) = enumJSON "String" s
-    toJSON VRNotPresent = show "NotPresent"
+    toJSON (VRBit c)    = enumJSON "B" (c:"")
+    toJSON (VRBits s)   = enumJSON "V" s
+    toJSON (VRString s) = enumJSON "S" s
+    toJSON VRNotPresent = show "N"
 
 instance ToJSON ValueKind where
-    toJSON VKNormal     = show "Normal"
-    toJSON VKUndef      = show "Undef"
-    toJSON VKHighImp    = show "HighImp"
-    toJSON VKWarn       = show "Warn"
-    toJSON VKDontCare   = show "DontCare"
-    toJSON VKWeak       = show "Weak"
-    toJSON (VKCustom c) = enumJSON "Custom" c
+    toJSON VKNormal     = show "N"
+    toJSON VKUndef      = show "U"
+    toJSON VKHighImp    = show "Z"
+    toJSON VKWarn       = show "E"
+    toJSON VKDontCare   = show "D"
+    toJSON VKWeak       = show "W"
+    toJSON (VKCustom c) = enumJSON "C" c
 
 instance ToJSON Color where
     toJSON (RGB r g b) = printf "[%d,%d,%d,255]" r g b
@@ -63,16 +72,16 @@ instance ToJSON [(String,VariableInfo)] where
 
 
 instance ToJSON SubFieldTranslationResult where
-    toJSON (SubFieldTranslationResult name res) = structJSON [("name",show name), ("result",toJSON res)]
+    toJSON (SubFieldTranslationResult name res) = structJSON [("n",show name), ("r",toJSON res)]
 
 instance ToJSON VariableInfo where
 
-    toJSON (VICompound xs) = structJSON [("Compound",structJSON [("subfields",toJSON xs)])]
-    toJSON VIBits   = show "Bits"
-    toJSON VIBool   = show "Bool"
-    toJSON VIClock  = show "Clock"
-    toJSON VIString = show "String"
-    toJSON VIReal   = show "Real"
+    toJSON (VICompound xs) = structJSON [("P",structJSON [("s",toJSON xs)])]
+    toJSON VIBits   = show "V"
+    toJSON VIBool   = show "B"
+    toJSON VIClock  = show "C"
+    toJSON VIString = show "S"
+    toJSON VIReal   = show "R"
 
 instance ToJSON (String,VariableInfo) where
     toJSON (name,info) = "["++show name++","++toJSON info++"]"
