@@ -81,6 +81,7 @@ common common-options
     binary,
     bytestring,
     text,
+    deepseq,
 
     -- clash-prelude will set suitable version bounds for the plugins
     clash-prelude >= 1.8.2 && < 1.10,
