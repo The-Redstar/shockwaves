@@ -1,5 +1,5 @@
 
-module WaveForms.Color (
+module ShockWaves.Color (
     Color(..),
     red,yellow,green,cyan,blue,magenta,white,gray,
 ) where

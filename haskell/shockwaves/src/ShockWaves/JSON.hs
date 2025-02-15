@@ -1,11 +1,11 @@
 {-# LANGUAGE FlexibleInstances #-}
 
-module WaveForms.JSON(ToJSON(toJSON)) where
+module WhockWaves.JSON(ToJSON(toJSON)) where
 
 import Prelude
 
-import WaveForms.Viewer
-import WaveForms.Color (Color(RGB))
+import ShockWaves.Viewer
+import ShockWaves.Color (Color(RGB))
 
 import Text.Printf
 import Data.Map (Map,toList)

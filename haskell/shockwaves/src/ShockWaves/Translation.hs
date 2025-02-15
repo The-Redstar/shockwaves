@@ -6,7 +6,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 
-module WaveForms.Translation (
+module ShockWaves.Translation (
     genTable, StructF,TransF,TranslationTable, -- generating translations
     TypeFunctions(tf),                         -- matching types
     translateFile,translateCmdLine             -- file input output
@@ -24,8 +24,8 @@ import GHC.TypeLits (KnownNat)
 import Clash.Sized.Internal.BitVector (BitVector(BV))
 import Clash.Class.BitPack   (BitPack,BitSize,unpack)
 
-import WaveForms.Viewer
-import WaveForms.JSON
+import ShockWaves.Viewer
+import ShockWaves.JSON
 
 -- the function signatures, so we can easily return the functions for the specified type
 type StructF = VariableInfo -- ^ StructF is treated as a function returning the variable info.

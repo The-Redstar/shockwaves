@@ -1,4 +1,9 @@
 {-|
+
+`Signal.Trace`, adapted by Marijn Adriaanse for use with Shockwaves
+
+Original:
+
 Copyright  :  (C) 2018, Google Inc.
                   2019, Myrtle Software Ltd
                   2022-2024, QBayLogic B.V.
@@ -55,7 +60,7 @@ main = do
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise       #-}
 
-module WaveForms.Trace
+module ShockWaves.Trace
   (
   -- * Tracing functions
   -- ** Simple
