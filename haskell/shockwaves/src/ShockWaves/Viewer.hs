@@ -6,7 +6,7 @@
 {-# LANGUAGE DeriveAnyClass #-} -- to derive Int etc
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE DeriveVia #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
 module ShockWaves.Viewer (
@@ -26,14 +26,16 @@ import GHC.Generics
 import GHC.TypeLits
 import Data.Proxy
 
-import WaveForms.Color      (Color)
+import ShockWaves.Color      (Color)
 
 -- undefined handling
 -- import System.IO.Unsafe     (unsafeDupablePerformIO)
 -- import Control.Exception    (catch,evaluate)
-import Control.DeepSeq      (NFData)
-import Clash.XException     (NFDataX, hasX)
-
+import Control.DeepSeq      (NFData, force)
+import Clash.XException     (NFDataX, XException (..))
+import GHC.IO.Unsafe        (unsafeDupablePerformIO)
+import Control.Exception.Base (evaluate,catch)
+import Data.Maybe           (fromMaybe)
 
 -- for instances of standard types:
 import Clash.Sized.Signed   (Signed)
@@ -77,6 +79,12 @@ data SubFieldTranslationResult = SubFieldTranslationResult String TranslationRes
 type TR = TranslationResult
 type STR = SubFieldTranslationResult
 
+tr :: (ValueRepr,ValueKind) -> [STR] -> TR
+tr = TranslationResult
+str :: String -> TR -> STR
+str = SubFieldTranslationResult
+
+
 
 -- MAIN CLASSES
 
@@ -94,9 +102,9 @@ class Display a where
     kind _ = VKNormal
 
 -- | Display a value if properly defined, else return `Nothing`.
-safeDisplay :: a -> Maybe (ValueRepr,ValueKind)
+safeDisplay :: (Display a) => a -> Maybe (ValueRepr,ValueKind)
 safeDisplay x = unsafeDupablePerformIO (catch (evaluate . Just . force $ display x)
-                                       (\(XException _) -> return None))
+                                       (\(XException _) -> return Nothing))
 
 -- | Class for determining the structure and value of subsignals.
 -- | The structure can be automatically deduced for types implementing `Generic` with all subtypes implementing `Split` as well.
@@ -111,26 +119,27 @@ class Split a where
     -- | Function to create the data for subsignals of a given type. If `structure` is not of the `VICompound` type, this list must be empty.AutoSplit
     -- | Subsignals need to share the names and order used in `structure`, but not all subsignals need to be provided.AutoSplit
     -- | Subsignals that are left out will be automatically set to `VRNotPresent`.
-    split :: a -> [STR]
-    default split :: forall x. (Generic a, AutoSplit (Rep a x)) => a -> [STR]
-    split x = autoSplit (from x) (maybe (VRString "undefined",VKUndef) id $ safeDisplay x)
+    -- | The function is given a copy of the display value, in case this needs to be copied.
+    split :: a -> (ValueRepr,ValueKind) -> [STR]
+    default split :: forall x. (Generic a, AutoSplit (Rep a x)) => a -> (ValueRepr,ValueKind) -> [STR]
+    split x = autoSplit (from @a @x x) --(maybe (VRString "undefined",VKUndef) id $ safeDisplay x)
 
-newtype NoSplit = NoSplit
-instance Split NoSplit where
+newtype NoSplit a = NoSplit a
+instance Split (NoSplit a) where
     structure = VIString
-    split _ = []
+    split _ _ = []
 
 -- | Split a value into values for its subsignals if properly defined, else return `Nothing`.
-safeSplit :: (Split a) => a -> Maybe [STR]
-safeSplit x = unsafeDupablePerformIO (catch (evaluate. Just . force $ translate x)
-                                     (\(XException _) -> Nothing))
+safeSplit :: (Split a) => a -> (ValueRepr,ValueKind) -> Maybe [STR]
+safeSplit x rk = unsafeDupablePerformIO (catch (evaluate. Just . force $ split x rk)
+                                        (\(XException _) -> return Nothing))
 
 -- | Translate a value using `safeDisplay` and `safeSplit`. If either returns `Nothing`, return a translation representing undefined instead.
 translate :: (Display a, Split a) => a -> TranslationResult
-translate x = case (safeDisplay x, safeSplit x) of
-    (Just d , Just s) => TR d s
-    (Nothing, Just s) => TR (VRString "undefined",VKUndef) s
-    _                 => TR (VRString "undefined",VKUndef) []
+translate x = case safeSplit x rk of
+    Just s  -> tr rk s
+    Nothing -> tr rk []
+  where rk = fromMaybe (VRString "undefined", VKUndef) (safeDisplay x)
 
 
 
@@ -141,7 +150,7 @@ class AutoSplit a where
     -- | Like `Split`'s `structure`
     autoStructure :: VariableInfo
     -- | Like `Split`'s `split`
-    autoSplit :: a -> (ValueRepr,ValueKind) -> TranslationResult
+    autoSplit :: a -> (ValueRepr,ValueKind) -> [STR]
 
 -- instance (AutoSplitConstrs (constrs p)) => AutoSplit (D1 meta constrs p) where
 --     autoSplit (M1 x) rk = res
@@ -156,14 +165,17 @@ class AutoSplit a where
 --             VICompound [(_,vi)] -> vi -- unpack single data constructor compound types
 --             vi                  -> vi
 
-instance (AutoSplitConstrs (constrs p)) => AutoSplit (D1 meta constrs@(a :+: b) p) where -- multiple constructors
-    autoStructure = autoStructureConstrs @(constrs p)
-    autoSplit (M1 x) _ = autoSplitConstrs @(constrs p) x rk
+instance (AutoSplitConstrs ((a :+: b) p)) => AutoSplit (D1 meta (a :+: b) p) where -- multiple constructors
+    autoStructure = case autoStructureConstrs @((a :+: b) p) of
+        [] -> VIString
+        sub -> VICompound sub
+    autoSplit (M1 x) rk = autoSplitConstrs @((a :+: b) p) x rk
 
-instance (AutoSplitConstrs (constrs p)) => AutoSplit (D1 meta (C1 (MetaCons name x y) fields p) p) where -- single constructor
-    autoStructure = [(symbolVal (Proxy @name), autoStructureFields' @(fields p))]
-    autoSplit (M1 (M1 x)) rk = [STR (symbolVal (Proxy @name)) $ TR rk fields]
-        where fields = autoSplitFields' x
+instance (KnownSymbol name,AutoSplitFields (fields p)) => AutoSplit (D1 meta (C1 (MetaCons name x y) fields) p) where -- single constructor
+    autoStructure = autoStructureFields' @(fields p) --[(symbolVal (Proxy @name), autoStructureFields' @(fields p))]
+    autoSplit (M1 (M1 x)) _rk = autoSplitFields' x
+    -- [str (symbolVal (Proxy @name)) $ tr rk fields]
+    --    where fields = autoSplitFields' x
 
 class AutoSplitConstrs a where
     autoStructureConstrs :: [(String,VariableInfo)]
@@ -177,7 +189,7 @@ instance (AutoSplitConstrs (a p), AutoSplitConstrs (b p)) => AutoSplitConstrs ((
 
 instance (KnownSymbol name,AutoSplitFields (fields p)) => AutoSplitConstrs (C1 (MetaCons name x y) fields p) where
     autoStructureConstrs = [(symbolVal (Proxy @name), autoStructureFields' @(fields p))]
-    autoSplitConstrs (M1 x) rk = [STR (symbolVal (Proxy @name)) $ TR rk fields]
+    autoSplitConstrs (M1 x) rk = [str (symbolVal (Proxy @name)) $ tr rk fields]
         where fields = autoSplitFields' x
 
 
@@ -204,13 +216,13 @@ instance (AutoSplitFields (a p), AutoSplitFields (b p)) => AutoSplitFields ((a :
             (fieldsb,nb) = autoSplitFields y na
 
 
-instance (KnownSymbol name,Split a) => AutoSplitFields (S1 (MetaSel (Just name) x y z) (Rec0 a) p) where
+instance (KnownSymbol name,Split a,Display a) => AutoSplitFields (S1 (MetaSel (Just name) x y z) (Rec0 a) p) where
     autoStructureFields n =                 ([    (symbolVal $ Proxy @name, structure @a)], n+1)
-    autoSplitFields M1{unM1=K1{unK1=x}} n = ([STR (symbolVal $ Proxy @name) (translate x)], n+1)
+    autoSplitFields M1{unM1=K1{unK1=x}} n = ([str (symbolVal $ Proxy @name) (translate x)], n+1)
 
-instance (                 Split a) => AutoSplitFields (S1 (MetaSel Nothing x y z) (Rec0 a) p) where
+instance (                 Split a,Display a) => AutoSplitFields (S1 (MetaSel Nothing x y z) (Rec0 a) p) where
     autoStructureFields n =                 ([    (show n                 , structure @a)], n+1)
-    autoSplitFields M1{unM1=K1{unK1=x}} n = ([STR (show n                 ) (translate x)], n+1)
+    autoSplitFields M1{unM1=K1{unK1=x}} n = ([str (show n                 ) (translate x)], n+1)
 
 instance AutoSplitFields (U1 p) where
     autoSplitFields _ n = ([],n)
@@ -237,60 +249,60 @@ instance (Show a0,Show a1,Show a2,Show a3,Show a4,Show a5,Show a6,Show a7,Show a
 instance (Show a0,Show a1,Show a2,Show a3,Show a4,Show a5,Show a6,Show a7,Show a8,Show a9,Show a10,Show a11,Show a12,Show a13) => Display (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13)
 instance (Show a0,Show a1,Show a2,Show a3,Show a4,Show a5,Show a6,Show a7,Show a8,Show a9,Show a10,Show a11,Show a12,Show a13,Show a14) => Display (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14)
 
-instance (Split a0,Split a1) => Split (a0,a1)
-instance (Split a0,Split a1,Split a2) => Split (a0,a1,a2)
-instance (Split a0,Split a1,Split a2,Split a3) => Split (a0,a1,a2,a3)
-instance (Split a0,Split a1,Split a2,Split a3,Split a4) => Split (a0,a1,a2,a3,a4)
-instance (Split a0,Split a1,Split a2,Split a3,Split a4,Split a5) => Split (a0,a1,a2,a3,a4,a5)
-instance (Split a0,Split a1,Split a2,Split a3,Split a4,Split a5,Split a6) => Split (a0,a1,a2,a3,a4,a5,a6)
-instance (Split a0,Split a1,Split a2,Split a3,Split a4,Split a5,Split a6,Split a7) => Split (a0,a1,a2,a3,a4,a5,a6,a7)
-instance (Split a0,Split a1,Split a2,Split a3,Split a4,Split a5,Split a6,Split a7,Split a8) => Split (a0,a1,a2,a3,a4,a5,a6,a7,a8)
-instance (Split a0,Split a1,Split a2,Split a3,Split a4,Split a5,Split a6,Split a7,Split a8,Split a9) => Split (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9)
-instance (Split a0,Split a1,Split a2,Split a3,Split a4,Split a5,Split a6,Split a7,Split a8,Split a9,Split a10) => Split (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10)
-instance (Split a0,Split a1,Split a2,Split a3,Split a4,Split a5,Split a6,Split a7,Split a8,Split a9,Split a10,Split a11) => Split (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11)
-instance (Split a0,Split a1,Split a2,Split a3,Split a4,Split a5,Split a6,Split a7,Split a8,Split a9,Split a10,Split a11,Split a12) => Split (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12)
-instance (Split a0,Split a1,Split a2,Split a3,Split a4,Split a5,Split a6,Split a7,Split a8,Split a9,Split a10,Split a11,Split a12,Split a13) => Split (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13)
-instance (Split a0,Split a1,Split a2,Split a3,Split a4,Split a5,Split a6,Split a7,Split a8,Split a9,Split a10,Split a11,Split a12,Split a13,Split a14) => Split (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14)
+instance (Display a0,Split a0,Display a1,Split a1) => Split (a0,a1)
+instance (Display a0,Split a0,Display a1,Split a1,Display a2,Split a2) => Split (a0,a1,a2)
+instance (Display a0,Split a0,Display a1,Split a1,Display a2,Split a2,Display a3,Split a3) => Split (a0,a1,a2,a3)
+instance (Display a0,Split a0,Display a1,Split a1,Display a2,Split a2,Display a3,Split a3,Display a4,Split a4) => Split (a0,a1,a2,a3,a4)
+instance (Display a0,Split a0,Display a1,Split a1,Display a2,Split a2,Display a3,Split a3,Display a4,Split a4,Display a5,Split a5) => Split (a0,a1,a2,a3,a4,a5)
+instance (Display a0,Split a0,Display a1,Split a1,Display a2,Split a2,Display a3,Split a3,Display a4,Split a4,Display a5,Split a5,Display a6,Split a6) => Split (a0,a1,a2,a3,a4,a5,a6)
+instance (Display a0,Split a0,Display a1,Split a1,Display a2,Split a2,Display a3,Split a3,Display a4,Split a4,Display a5,Split a5,Display a6,Split a6,Display a7,Split a7) => Split (a0,a1,a2,a3,a4,a5,a6,a7)
+instance (Display a0,Split a0,Display a1,Split a1,Display a2,Split a2,Display a3,Split a3,Display a4,Split a4,Display a5,Split a5,Display a6,Split a6,Display a7,Split a7,Display a8,Split a8) => Split (a0,a1,a2,a3,a4,a5,a6,a7,a8)
+instance (Display a0,Split a0,Display a1,Split a1,Display a2,Split a2,Display a3,Split a3,Display a4,Split a4,Display a5,Split a5,Display a6,Split a6,Display a7,Split a7,Display a8,Split a8,Display a9,Split a9) => Split (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9)
+instance (Display a0,Split a0,Display a1,Split a1,Display a2,Split a2,Display a3,Split a3,Display a4,Split a4,Display a5,Split a5,Display a6,Split a6,Display a7,Split a7,Display a8,Split a8,Display a9,Split a9,Display a10,Split a10) => Split (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10)
+instance (Display a0,Split a0,Display a1,Split a1,Display a2,Split a2,Display a3,Split a3,Display a4,Split a4,Display a5,Split a5,Display a6,Split a6,Display a7,Split a7,Display a8,Split a8,Display a9,Split a9,Display a10,Split a10,Display a11,Split a11) => Split (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11)
+instance (Display a0,Split a0,Display a1,Split a1,Display a2,Split a2,Display a3,Split a3,Display a4,Split a4,Display a5,Split a5,Display a6,Split a6,Display a7,Split a7,Display a8,Split a8,Display a9,Split a9,Display a10,Split a10,Display a11,Split a11,Display a12,Split a12) => Split (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12)
+instance (Display a0,Split a0,Display a1,Split a1,Display a2,Split a2,Display a3,Split a3,Display a4,Split a4,Display a5,Split a5,Display a6,Split a6,Display a7,Split a7,Display a8,Split a8,Display a9,Split a9,Display a10,Split a10,Display a11,Split a11,Display a12,Split a12,Display a13,Split a13) => Split (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13)
+instance (Display a0,Split a0,Display a1,Split a1,Display a2,Split a2,Display a3,Split a3,Display a4,Split a4,Display a5,Split a5,Display a6,Split a6,Display a7,Split a7,Display a8,Split a8,Display a9,Split a9,Display a10,Split a10,Display a11,Split a11,Display a12,Split a12,Display a13,Split a13,Display a14,Split a14) => Split (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14)
 
 -- INSTANCES FOR OTHER STANDARD HASKELL TYPES
 
 instance Display Bool where
     repr x = VRBit (if x then '1' else '0')
-deriving Split Bool where
+instance Split Bool where
     structure = VIBool
-    split _ = []
+    split _ _ = []
 
 instance (Show a) => Display (Maybe a)
-instance (Show a, Split a) => Split (Maybe a) where
+instance (Display a, Split a) => Split (Maybe a) where
     structure = VICompound [("Just.0",structure @a)]
 
-    split Nothing = []
-    split (Just y) = [SR "Just.0" $ translate y]
+    split Nothing _ = []
+    split (Just y) _ = [str "Just.0" $ translate y]
 
 instance (Show a, Show b) => Display (Either a b)
-instance (Show  a, Split a, Show b, Split b) => Split (Either a b)
+instance (Display a, Split a, Display b, Split b) => Split (Either a b)
 
 -- INSTANCES FOR CLASH TYPES
 
 instance Display Bit
 instance Split Bit where
     structure = VIBool
-    split _ = []
+    split _ _ = []
 
 instance Display (Signed n) where
-deriving Split (Signed n) via NoSplit
+deriving via NoSplit (Signed n) instance Split (Signed n)
 
 instance Display (Unsigned n)
-deriving Split (Unsigned n) via NoSplit
+deriving via NoSplit (Unsigned n) instance Split (Unsigned n)
 
 instance Display (Index n)
-deriving Split (Index n) via NoSplit
+deriving via NoSplit (Index n) instance Split (Index n)
 
 instance (Show a) => Display (Vec n a)
-instance (KnownNat n, Split a, Show a) => Split (Vec n a) where
+instance (KnownNat n, Split a, Display a) => Split (Vec n a) where
     structure = VICompound $ map (\i -> (show i,structure @a)) [0..(natVal $ Proxy @n)]
 
-    split v = zipWith (\i s -> SubFieldTranslationResult (show i) (translate s)) [(0::Integer)..] (toList v)
+    split v _ = zipWith (\i s -> SubFieldTranslationResult (show i) (translate s)) [(0::Integer)..] (toList v)
 
 instance (KnownNat n) => Display (BitVector n)
 instance (KnownNat n) => Split (BitVector n) where

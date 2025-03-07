@@ -112,8 +112,8 @@ import           Clash.XException      (deepseqX, NFDataX)
 import           Clash.Sized.Internal.BitVector
   (BitVector(BV))
 
-import           WaveForms.Viewer      (Split (structure,safeTranslate),TranslationResult,VariableInfo)
-import           WaveForms.JSON        (toJSON)
+import           ShockWaves.Viewer      (Split(structure),Display,TranslationResult,VariableInfo,translate)
+import           ShockWaves.JSON        (toJSON)
 
 -- Haskell / GHC:
 import           Control.Monad         (foldM)
@@ -188,12 +188,13 @@ mkTrace
   => BitPack a
   => NFDataX a
   => Split a
+  => Display a
   => Signal dom a
   -> [(Value,String,TranslationResult)]
 mkTrace signal = map go $ sample signal--sample (unsafeToTup . pack <$> signal)
  where
   unsafeToTup (BV mask value) = (mask, value)
-  go x = (unsafeToTup bv, showSimple bv, safeTranslate x)
+  go x = (unsafeToTup bv, showSimple bv, translate x)
     where bv = pack x
 
 
@@ -204,7 +205,8 @@ traceSignal#
    . ( BitPack a
      , NFDataX a
      , Typeable a
-     , Split a )
+     , Split a
+     , Display a )
   => IORef TraceMap
   -- ^ Map to store the trace
   -> Int
@@ -243,7 +245,8 @@ traceVecSignal#
      , BitPack a
      , NFDataX a
      , Typeable a
-     , Split a )
+     , Split a
+     , Display a )
   => IORef TraceMap
   -- ^ Map to store the traces
   -> Int
@@ -274,7 +277,8 @@ traceSignal
      , BitPack a
      , NFDataX a
      , Typeable a
-     , Split a )
+     , Split a
+     , Display a )
   => String
   -- ^ Name of signal in the VCD output
   -> Signal dom a
@@ -300,7 +304,8 @@ traceSignal1
   :: ( BitPack a
      , NFDataX a
      , Typeable a
-     , Split a )
+     , Split a
+     , Display a )
   => String
   -- ^ Name of signal in the VCD output
   -> Signal dom a
@@ -326,7 +331,8 @@ traceVecSignal
      , BitPack a
      , NFDataX a
      , Typeable a
-     , Split a )
+     , Split a
+     , Display a )
   => String
   -- ^ Name of signal in debugging output. Will be appended by _0, _1, ..., _n.
   -> Signal dom (Vec (n+1) a)
@@ -354,7 +360,8 @@ traceVecSignal1
      , BitPack a
      , NFDataX a
      , Typeable a
-     , Split a )
+     , Split a
+     , Display a )
   => String
   -- ^ Name of signal in debugging output. Will be appended by _0, _1, ..., _n.
   -> Signal dom (Vec (n+1) a)

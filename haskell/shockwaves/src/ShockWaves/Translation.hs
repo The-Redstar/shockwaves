@@ -48,14 +48,15 @@ toBV s = BV m i
                     _   -> (1,0)
         (m,i) = toNat $ reverse s
 
+
 -- | Get translation function for a given type.
 -- | This class is used to only have to specify the type once while translating.
 class TypeFunctions a where
     -- | Get translation function for the type.
     tf :: (StructF,TransF)
-instance (BitPack a,Split a) => TypeFunctions a where
+instance (BitPack a,Display a,Split a) => TypeFunctions a where
     tf = (structure @a,translate')
-        where translate' val = safeTranslate @a $ unpack (toBV val::(BitVector (BitSize a)))
+        where translate' val = translate @a $ unpack (toBV val::(BitVector (BitSize a)))
 
 -- | Generate a table of value representations for types, using the provided type-label-to-functions table,
 -- | and the list of (type label, list of values) pairs.

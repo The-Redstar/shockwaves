@@ -1,6 +1,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 
-module WhockWaves.JSON(ToJSON(toJSON)) where
+module ShockWaves.JSON(ToJSON(toJSON)) where
 
 import Prelude
 
