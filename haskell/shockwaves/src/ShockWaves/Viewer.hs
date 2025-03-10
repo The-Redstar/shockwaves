@@ -1,13 +1,12 @@
 
-{-# LANGUAGE AllowAmbiguousTypes #-} -- with :set -XAllow....
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DefaultSignatures #-}
-{-# LANGUAGE DeriveAnyClass #-} -- to derive Int etc
-{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE DeriveAnyClass #-} -- to derive Maybe etc
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DerivingVia #-}
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE CPP #-}
 
 module ShockWaves.Viewer (
     Display(..),
@@ -152,19 +151,6 @@ class AutoSplit a where
     -- | Like `Split`'s `split`
     autoSplit :: a -> (ValueRepr,ValueKind) -> [STR]
 
--- instance (AutoSplitConstrs (constrs p)) => AutoSplit (D1 meta constrs p) where
---     autoSplit (M1 x) rk = res
---       where
---         res = case (autoStructure @(constrs p), autoSplit @(constrs p) x rk) of
---             (VICompound [(_,_)], [STR _ (TR _ sub)]) -> sub -- unpack single data constructor compound types
---             (_,tr)                                   -> tr
-
---     autoStructure = res
---       where
---         res = case autoStructure @(constrs p) of
---             VICompound [(_,vi)] -> vi -- unpack single data constructor compound types
---             vi                  -> vi
-
 instance (AutoSplitConstrs ((a :+: b) p)) => AutoSplit (D1 meta (a :+: b) p) where -- multiple constructors
     autoStructure = case autoStructureConstrs @((a :+: b) p) of
         [] -> VIString
@@ -172,10 +158,8 @@ instance (AutoSplitConstrs ((a :+: b) p)) => AutoSplit (D1 meta (a :+: b) p) whe
     autoSplit (M1 x) rk = autoSplitConstrs @((a :+: b) p) x rk
 
 instance (KnownSymbol name,AutoSplitFields (fields p)) => AutoSplit (D1 meta (C1 (MetaCons name x y) fields) p) where -- single constructor
-    autoStructure = autoStructureFields' @(fields p) --[(symbolVal (Proxy @name), autoStructureFields' @(fields p))]
+    autoStructure = autoStructureFields' @(fields p)
     autoSplit (M1 (M1 x)) _rk = autoSplitFields' x
-    -- [str (symbolVal (Proxy @name)) $ tr rk fields]
-    --    where fields = autoSplitFields' x
 
 class AutoSplitConstrs a where
     autoStructureConstrs :: [(String,VariableInfo)]
@@ -191,7 +175,6 @@ instance (KnownSymbol name,AutoSplitFields (fields p)) => AutoSplitConstrs (C1 (
     autoStructureConstrs = [(symbolVal (Proxy @name), autoStructureFields' @(fields p))]
     autoSplitConstrs (M1 x) rk = [str (symbolVal (Proxy @name)) $ tr rk fields]
         where fields = autoSplitFields' x
-
 
 class AutoSplitFields a where
     autoStructureFields :: Int -> ([(String,VariableInfo)],Int) -- int for assigning numbers to signal names
@@ -272,14 +255,24 @@ instance Split Bool where
     structure = VIBool
     split _ _ = []
 
-instance (Show a) => Display (Maybe a)
+instance (Show a) => Display (Maybe a) where
+#ifdef NOTHING_DC
+    kind Nothing = VKDontCare
+#else
+    kind Nothing = VKNormal
+#endif
+    kind _ = VKNormal
 instance (Display a, Split a) => Split (Maybe a) where
     structure = VICompound [("Just.0",structure @a)]
 
     split Nothing _ = []
     split (Just y) _ = [str "Just.0" $ translate y]
 
-instance (Show a, Show b) => Display (Either a b)
+instance (Show a, Show b) => Display (Either a b) where
+#ifdef LEFT_ERR
+    kind (Left _) = VKWarn
+#endif
+    kind _ = VKNormal
 instance (Display a, Split a, Display b, Split b) => Split (Either a b)
 
 -- INSTANCES FOR CLASH TYPES

@@ -86,7 +86,14 @@ translateFile types infile outfile = do
     putStrLn $ "Saving to file: "++outfile
     writeFile outfile json
 
--- | Run `translateFile` using the first two command line arguments
+-- | Given a function that maps string representations of types to the translation functions for said type,
+-- | translate all values in the input file.
+-- | Run `translateFile` using the first two command line arguments for the input and output.
+-- | The input file format is:
+-- <type>
+-- <value> <value> <value> ...
+-- <type>
+-- ...
 translateCmdLine :: (String -> (StructF, TransF)) -> IO ()
 translateCmdLine types = do
     args <- getArgs

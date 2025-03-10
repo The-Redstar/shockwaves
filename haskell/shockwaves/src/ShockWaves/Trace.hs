@@ -15,10 +15,11 @@ Utilities for tracing signals and dumping them in various ways. Example usage:
 @
 import Clash.Prelude hiding (writeFile)
 import Data.Text.IO  (writeFile)
+import qualified ShockWaves.Trace as SWT
 
 -- | Count and wrap around
 subCounter :: SystemClockResetEnable => Signal System (Index 3)
-subCounter = traceSignal1 "sub" counter
+subCounter = SWT.traceSignal1 "sub" counter
   where
     counter =
       register 0 (fmap succ' counter)
@@ -29,7 +30,7 @@ subCounter = traceSignal1 "sub" counter
 
 -- | Count, but only when my subcounter is wrapping around
 mainCounter :: SystemClockResetEnable => Signal System (Signed 64)
-mainCounter = traceSignal1 "main" counter
+mainCounter = SWT.traceSignal1 "main" counter
   where
     counter =
       register 0 (fmap succ' $ bundle (subCounter,counter))
@@ -42,12 +43,14 @@ mainCounter = traceSignal1 "main" counter
 main :: IO ()
 main = do
   let cntrOut = exposeClockResetEnable mainCounter systemClockGen systemResetGen enableGen
-  vcd <- dumpVCD (0, 100) cntrOut ["main", "sub"]
+  vcddata <- SWT.dumpVCD (0, 100) cntrOut ["main", "sub"]
   case vcd of
     Left msg ->
       error msg
-    Right contents ->
-      writeFile "mainCounter.vcd" contents
+    Right (vcd,types,trans) ->
+      do writeFile "mainCounter.vcd" $ Text.unpack vcd
+         writeFile "mainCounter.types.json" $ Text.unpack types
+         writeFile "mainCounter.trans.json" $ Text.unpack trans
 @
 -}
 {-# LANGUAGE CPP #-}

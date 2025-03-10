@@ -5,6 +5,18 @@ license:             BSD-2-Clause
 author:              John Smith <john@example.com>
 maintainer:          John Smith <john@example.com>
 
+flag left-err
+  description:
+    Display the `Left` variant of `Either` as an `VKWarn`.
+  default: False
+  manual: True
+
+flag nothing-dc
+  description:
+    Display the `Nothing` variant of `Maybe` as `VKDontCare`.
+  default: True
+  manual: True
+
 common common-options
   default-extensions:
     BangPatterns
@@ -99,9 +111,15 @@ library
     ShockWaves.Color
     ShockWaves.Trace
     ShockWaves.Translation
+    ShockWaves.JSON
   other-modules:
     ShockWaves.JSON
   default-language: Haskell2010
+
+  if flag(left-err)
+    CPP-Options: -DLEFT_ERR
+  if flag(nothing-dc)
+    CPP-Options: -DNOTHING_DC
 
 -- Builds the executable 'clash', with shockwaves project in scope
 executable clash
