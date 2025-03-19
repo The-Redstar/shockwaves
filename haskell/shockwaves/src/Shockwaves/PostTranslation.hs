@@ -91,10 +91,12 @@ translateFile types infile outfile = do
 -- Run `translateFile` using the first two command line arguments for the input and output.
 -- The input file format is:
 --
+-- @
 -- <type>
 -- <value> <value> <value> ...
 -- <type>
 -- ...
+-- @
 translateCmdLine :: (String -> (StructF, TransF)) -> IO ()
 translateCmdLine types = do
     args <- getArgs

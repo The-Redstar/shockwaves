@@ -42,7 +42,25 @@ import Data.Maybe           (fromMaybe)
 import Clash.Sized.Signed   (Signed)
 import Clash.Sized.Unsigned (Unsigned)
 import Clash.Sized.Vector   (Vec(..),toList)
-import Clash.Prelude (BitVector, Bit, Index, bv2v)
+import Clash.Prelude        (BitVector, Bit, Index, bv2v, RTree(..), SNat)
+import Data.Int             (Int8,Int16,Int32,Int64)
+import Data.Word            (Word8,Word16,Word32,Word64)
+-- import Numeric.Half.Internal (Half)
+import Foreign.C            (CUShort)
+import Data.Complex         (Complex)
+import Data.Ord             (Down)
+import Data.Functor.Identity(Identity)
+import Clash.Num.Zeroing    (Zeroing, fromZeroing)
+import Clash.Num.Wrapping   (Wrapping, fromWrapping)
+import Clash.Num.Saturating (Saturating, fromSaturating)
+import Clash.Num.Overflowing(Overflowing, fromOverflowing)
+import Clash.Num.Erroring   (Erroring, fromErroring)
+import Clash.Sized.Fixed    (Fixed)
+import Data.Functor.Const   (Const)
+import Data.Functor.Product (Product)
+import Data.Functor.Classes (Show1)
+import Data.Functor.Sum (Sum)
+import Data.Functor.Compose (Compose)
 
 -- VALUE REPRESENTATION TYPES
 
@@ -286,6 +304,9 @@ instance (Display a0,Split a0,Display a1,Split a1,Display a2,Split a2,Display a3
 
 -- INSTANCES FOR OTHER STANDARD HASKELL TYPES
 
+instance Display ()
+deriving via NoSplit () instance Split ()
+
 instance Display Bool where
     repr x = VRBit (if x then '1' else '0')
 instance Split Bool where
@@ -320,12 +341,60 @@ instance (ShowX a, ShowX b) => Display (Either a b) where
     kind _ = VKNormal
 instance (Display a, Split a, Display b, Split b) => Split (Either a b)
 
--- INSTANCES FOR CLASH TYPES
+
+instance Display Char
+deriving via NoSplit Char instance Split Char
+
 
 instance Display Bit
 instance Split Bit where
     structure = VIBool
     split _ _ = []
+
+instance Display Double where
+deriving via NoSplit Double instance Split Double
+
+instance Display Float where
+deriving via NoSplit Float instance Split Float
+
+instance Display Int where
+deriving via NoSplit Int instance Split Int
+
+instance Display Int8 where
+deriving via NoSplit Int8 instance Split Int8
+
+instance Display Int16 where
+deriving via NoSplit Int16 instance Split Int16
+
+instance Display Int32 where
+deriving via NoSplit Int32 instance Split Int32
+
+instance Display Int64 where
+deriving via NoSplit Int64 instance Split Int64
+
+instance Display Ordering where
+deriving via NoSplit Ordering instance Split Ordering
+
+instance Display Word where
+deriving via NoSplit Word instance Split Word
+
+instance Display Word8 where
+deriving via NoSplit Word8 instance Split Word8
+
+instance Display Word16 where
+deriving via NoSplit Word16 instance Split Word16
+
+instance Display Word32 where
+deriving via NoSplit Word32 instance Split Word32
+
+instance Display Word64 where
+deriving via NoSplit Word64 instance Split Word64
+
+instance Display CUShort where
+deriving via NoSplit CUShort instance Split CUShort
+
+-- instance Display Half where
+-- deriving via NoSplit Half instance Split Half
 
 instance Display (Signed n) where
 deriving via NoSplit (Signed n) instance Split (Signed n)
@@ -337,6 +406,72 @@ instance Display (Index n)
 deriving via NoSplit (Index n) instance Split (Index n)
 
 #ifndef DEFAULT_SHOWX
+instance (Show a) => Display (Complex a)
+#else
+instance (ShowX a) => Display (Complex a)
+#endif
+instance (Display a, Split a) => Split (Complex a)
+
+#ifndef DEFAULT_SHOWX
+instance (Show a) => Display (Down a)
+#else
+instance (ShowX a) => Display (Down a)
+#endif
+instance (Display a, Split a) => Split (Down a)
+
+#ifndef DEFAULT_SHOWX
+instance (Show a) => Display (Identity a)
+#else
+instance (ShowX a) => Display (Identity a)
+#endif
+instance (Display a, Split a) => Split (Identity a)
+
+#ifndef DEFAULT_SHOWX
+instance (Show a) => Display (Zeroing a)
+#else
+instance (ShowX a) => Display (Zeroing a)
+#endif
+instance (Display a, Split a) => Split (Zeroing a) where
+    structure = VICompound [("0",structure @a)]
+    split z _ = [str "0" $ translate $ fromZeroing z]
+
+#ifndef DEFAULT_SHOWX
+instance (Show a) => Display (Wrapping a)
+#else
+instance (ShowX a) => Display (Wrapping a)
+#endif
+instance (Display a, Split a) => Split (Wrapping a) where
+    structure = VICompound [("0",structure @a)]
+    split z _ = [str "0" $ translate $ fromWrapping z]
+
+#ifndef DEFAULT_SHOWX
+instance (Show a) => Display (Saturating a)
+#else
+instance (ShowX a) => Display (Saturating a)
+#endif
+instance (Display a, Split a) => Split (Saturating a) where
+    structure = VICompound [("0",structure @a)]
+    split z _ = [str "0" $ translate $ fromSaturating z]
+
+#ifndef DEFAULT_SHOWX
+instance (Show a) => Display (Overflowing a)
+#else
+instance (ShowX a) => Display (Overflowing a)
+#endif
+instance (Display a, Split a) => Split (Overflowing a) where
+    structure = VICompound [("0",structure @a)]
+    split z _ = [str "0" $ translate $ fromOverflowing z]
+
+#ifndef DEFAULT_SHOWX
+instance (Show a) => Display (Erroring a)
+#else
+instance (ShowX a) => Display (Erroring a)
+#endif
+instance (Display a, Split a) => Split (Erroring a) where
+    structure = VICompound [("0",structure @a)]
+    split z _ = [str "0" $ translate $ fromErroring z]
+
+#ifndef DEFAULT_SHOWX
 instance (Show a) => Display (Vec n a)
 #else
 instance (ShowX a) => Display (Vec n a)
@@ -346,7 +481,64 @@ instance (KnownNat n, Split a, Display a) => Split (Vec n a) where
 
     split v _ = zipWith (\i s -> SubFieldTranslationResult (show i) (translate s)) [(0::Integer)..] (toList v)
 
+#ifndef DEFAULT_SHOWX
+instance (Show a) => Display (RTree d a)
+instance (Show a, Display a, Split a, KnownNat d) => Split (RTree d a) where
+#else
+instance (ShowX a) => Display (RTree d a)
+instance (ShowX a, Display a, Split a, KnownNat d) => Split (RTree d a) where
+#endif
+    structure = structureRTree (natVal $ Proxy @d) (structure @a)
+    split (RLeaf x)     _ = [str "0" $ translate x]
+    split (RBranch l r) _ = [str "left" $ translate l, str "right" $ translate r]
+
+structureRTree :: Integer -> VariableInfo -> VariableInfo
+structureRTree d sa = VICompound $ if d==0 then [("0",sa)] else [("left",tree'),("right",tree')]
+    where tree' = structureRTree (d-1) sa
+
+
 instance (KnownNat n) => Display (BitVector n)
 instance (KnownNat n) => Split (BitVector n) where
     structure = structure @(Vec n Bit)
     split = split . bv2v
+
+#ifndef DEFAULT_SHOWX
+instance (Show a) => Display (Const a b)
+#else
+instance (ShowX a) => Display (Const a b)
+#endif
+instance (Display a, Split a) => Split (Const a b)
+
+#ifndef DEFAULT_SHOWX
+instance (Show (Fixed r i f)) => Display (Fixed r i f)
+#else
+instance (ShowX (Fixed r i f)) => Display (Fixed r i f)
+#endif
+deriving via NoSplit (Fixed r i f) instance Split (Fixed r i f)
+
+#ifndef DEFAULT_SHOWX
+instance (Show1 f, Show1 g, Show a) => Display (Product f g a)
+#else
+instance (Show1 f, Show1 g, ShowX a) => Display (Product f g a)
+#endif
+instance (Display (f a), Display (g a), Split (f a), Split (g a)) => Split (Product f g a)
+
+#ifndef DEFAULT_SHOWX
+instance (Show1 f, Show1 g, Show a) => Display (Sum f g a)
+#else
+instance (Show1 f, Show1 g, ShowX a) => Display (Sum f g a)
+#endif
+instance (Display (f a), Display (g a), Split (f a), Split (g a)) => Split (Sum f g a)
+
+#ifndef DEFAULT_SHOWX
+instance (Show1 f, Show1 g, Show a) => Display (Compose f g a)
+#else
+instance (Show1 f, Show1 g, ShowX a) => Display (Compose f g a)
+#endif
+instance (Display (f (g a)), Display (g a), Split (f (g a)), Split (g a)) => Split (Compose f g a)
+
+instance Display (Clash.Prelude.SNat n)
+deriving via NoSplit (Clash.Prelude.SNat n) instance Split (Clash.Prelude.SNat n)
+
+instance Display (Proxy a)
+deriving via NoSplit (Proxy a) instance Split (Proxy a)
