@@ -1,11 +1,11 @@
 {-# LANGUAGE FlexibleInstances #-}
 
-module ShockWaves.JSON(ToJSON(toJSON)) where
+module Shockwaves.JSON(ToJSON(toJSON)) where
 
 import Prelude
 
-import ShockWaves.Viewer
-import ShockWaves.Color (Color(RGB))
+import Shockwaves.Viewer
+import Shockwaves.Color (Color(RGB))
 
 import Text.Printf
 import Data.Map (Map,toList)

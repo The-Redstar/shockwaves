@@ -1,9 +1,9 @@
 
 -- temporary test script meant to illustrate
 
-import WaveForms.Viewer
-import WaveForms.Color
-import WaveForms.Translation
+import Shockwaves.Viewer
+import Shockwaves.Color
+import Shockwaves.Translation
 import GHC.Generics
 
 data Test = A | B Int | C{val::Int,var::Int} deriving (Show,Generic,BitPack)

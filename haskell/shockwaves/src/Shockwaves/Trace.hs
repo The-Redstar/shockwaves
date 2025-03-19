@@ -15,7 +15,7 @@ Utilities for tracing signals and dumping them in various ways. Example usage:
 @
 import Clash.Prelude hiding (writeFile)
 import Data.Text.IO  (writeFile)
-import qualified ShockWaves.Trace as SWT
+import qualified Shockwaves.Trace as SWT
 
 -- | Count and wrap around
 subCounter :: SystemClockResetEnable => Signal System (Index 3)
@@ -63,7 +63,7 @@ main = do
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise       #-}
 
-module ShockWaves.Trace
+module Shockwaves.Trace
   (
   -- * Tracing functions
   -- ** Simple
@@ -115,8 +115,8 @@ import           Clash.XException      (deepseqX, NFDataX)
 import           Clash.Sized.Internal.BitVector
   (BitVector(BV))
 
-import           ShockWaves.Viewer      (Split(structure),Display,TranslationResult,VariableInfo,translate)
-import           ShockWaves.JSON        (toJSON)
+import           Shockwaves.Viewer      (Split(structure),Display,TranslationResult,VariableInfo,translate)
+import           Shockwaves.JSON        (toJSON)
 
 -- Haskell / GHC:
 import           Control.Monad         (foldM)

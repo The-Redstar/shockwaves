@@ -6,7 +6,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 
-module ShockWaves.Translation (
+module Shockwaves.PostTranslation (
     genTable, StructF,TransF,TranslationTable, -- generating translations
     TypeFunctions(tf),                         -- matching types
     translateFile,translateCmdLine             -- file input output
@@ -24,8 +24,8 @@ import GHC.TypeLits (KnownNat)
 import Clash.Sized.Internal.BitVector (BitVector(BV))
 import Clash.Class.BitPack   (BitPack,BitSize,unpack)
 
-import ShockWaves.Viewer
-import ShockWaves.JSON
+import Shockwaves.Viewer
+import Shockwaves.JSON
 
 -- the function signatures, so we can easily return the functions for the specified type
 type StructF = VariableInfo -- ^ StructF is treated as a function returning the variable info.
@@ -50,7 +50,7 @@ toBV s = BV m i
 
 
 -- | Get translation function for a given type.
--- | This class is used to only have to specify the type once while translating.
+-- This class is used to only have to specify the type once while translating.
 class TypeFunctions a where
     -- | Get translation function for the type.
     tf :: (StructF,TransF)
@@ -59,7 +59,7 @@ instance (BitPack a,Display a,Split a) => TypeFunctions a where
         where translate' val = translate @a $ unpack (toBV val::(BitVector (BitSize a)))
 
 -- | Generate a table of value representations for types, using the provided type-label-to-functions table,
--- | and the list of (type label, list of values) pairs.
+-- and the list of (type label, list of values) pairs.
 genTable :: (String -> (StructF,TransF)) -> [(String,[String])] -> TranslationTable
 genTable typeFunc typeValues = Map.fromList $ map genTable' typeValues
     where
@@ -68,7 +68,7 @@ genTable typeFunc typeValues = Map.fromList $ map genTable' typeValues
             where (struct,trans) = typeFunc ty
 
 -- | Given a function to convert type strings into translation functions for that type,
--- | turn the values per type from the input file into a translation table.
+-- turn the values per type from the input file into a translation table.
 translateFile :: (String -> (StructF, TransF)) -> String -> String -> IO ()
 translateFile types infile outfile = do
     putStrLn $ "Reading file: "++infile
@@ -87,9 +87,10 @@ translateFile types infile outfile = do
     writeFile outfile json
 
 -- | Given a function that maps string representations of types to the translation functions for said type,
--- | translate all values in the input file.
--- | Run `translateFile` using the first two command line arguments for the input and output.
--- | The input file format is:
+-- translate all values in the input file.
+-- Run `translateFile` using the first two command line arguments for the input and output.
+-- The input file format is:
+--
 -- <type>
 -- <value> <value> <value> ...
 -- <type>
@@ -97,7 +98,7 @@ translateFile types infile outfile = do
 translateCmdLine :: (String -> (StructF, TransF)) -> IO ()
 translateCmdLine types = do
     args <- getArgs
-    let infile = args !! 0
+    let infile  = args !! 0
     let outfile = args !! 1
     translateFile types infile outfile
 

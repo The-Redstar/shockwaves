@@ -7,8 +7,9 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE UndecidableInstances #-}
 
-module ShockWaves.Viewer (
+module Shockwaves.Viewer (
     Display(..),
     Split(..),
     AutoSplit(..),
@@ -17,6 +18,7 @@ module ShockWaves.Viewer (
     VariableInfo(..),
     TranslationResult(..),SubFieldTranslationResult(..),
     translate, safeDisplay, safeSplit,
+    NoSplit(..), DisplayX(..),
 ) where
 -- import qualified WaveFormViewer as WFV
 
@@ -25,15 +27,15 @@ import GHC.Generics
 import GHC.TypeLits
 import Data.Proxy
 
-import ShockWaves.Color      (Color)
+import Shockwaves.Color      (Color)
 
 -- undefined handling
 -- import System.IO.Unsafe     (unsafeDupablePerformIO)
 -- import Control.Exception    (catch,evaluate)
 import Control.DeepSeq      (NFData, force)
-import Clash.XException     (NFDataX, XException (..))
+import Clash.XException     (NFDataX, isX, ShowX(..))
 import GHC.IO.Unsafe        (unsafeDupablePerformIO)
-import Control.Exception.Base (evaluate,catch)
+import Control.Exception    (evaluate,catch,SomeException)
 import Data.Maybe           (fromMaybe)
 
 -- for instances of standard types:
@@ -53,7 +55,7 @@ data ValueRepr
   deriving (Show,Generic,NFData,NFDataX)
 
 -- | Determines the way values are displayed. For most signals, this only determines the color,
--- | but VIBool signals can have lines at different heights for the different value types.
+-- but VIBool signals can have lines at different heights for the different value types.
 data ValueKind
     = VKNormal        -- ^ Green
     | VKUndef         -- ^ Red
@@ -65,8 +67,8 @@ data ValueKind
   deriving (Show,Generic,NFData,NFDataX)
 
 -- | Information about the signal structure.
--- | `VICompound` is the only variant allowed to have subsignals. Translation results must match this structure.
--- | `VIBool` and `VIClock` are displayed differently in the waveform viewer (as waves).
+-- `VICompound` is the only variant allowed to have subsignals. Translation results must match this structure.
+-- `VIBool` and `VIClock` are displayed differently in the waveform viewer (as waves).
 data VariableInfo = VICompound [(String,VariableInfo)] | VIBits | VIBool | VIClock | VIString | VIReal deriving Show
 
 -- | A value representation similar to that used in Surfer. The structure must match that of `VariableInfo`.
@@ -88,37 +90,54 @@ str = SubFieldTranslationResult
 -- MAIN CLASSES
 
 -- | Class determining the appearance of a value in the waveform viewer (text and color).
--- | By default, this uses `Show` and `VKNormal`.
+-- By default, this uses `Show` and `VKNormal`.
 class Display a where
     display :: a -> (ValueRepr,ValueKind)
     display x = (repr x, kind x)
 
+#ifndef DEFAULT_SHOWX
     repr :: a -> ValueRepr
     default repr :: ( Show a ) => a -> ValueRepr
     repr x = VRString $ take 100 $ show x
 
     kind :: a -> ValueKind
     kind _ = VKNormal
+#else
+    repr :: a -> ValueRepr
+    default repr :: (ShowX a, Display (DisplayX a)) => a -> ValueRepr
+    repr x = repr (DisplayX x)
+
+    kind :: a -> ValueKind
+    default kind :: (Display (DisplayX a)) => a -> ValueKind
+    kind x = kind (DisplayX x)
+#endif
+
+newtype DisplayX a = DisplayX a deriving (Generic,ShowX)
+instance (ShowX a) => Display (DisplayX a) where
+    repr (DisplayX x) = VRString $ take 100 $ showX x
+    kind (DisplayX x) = case isX x of
+        Right _ -> VKNormal
+        Left  _ -> VKUndef
 
 -- | Display a value if properly defined, else return `Nothing`.
 safeDisplay :: (Display a) => a -> Maybe (ValueRepr,ValueKind)
-safeDisplay x = unsafeDupablePerformIO (catch (evaluate . Just . force $ display x)
-                                       (\(XException _) -> return Nothing))
+safeDisplay x = unsafeDupablePerformIO (catch (evaluate . force . Just $ display x)
+                                       (\(_::SomeException) -> return Nothing))
 
 -- | Class for determining the structure and value of subsignals.
--- | The structure can be automatically deduced for types implementing `Generic` with all subtypes implementing `Split` as well.
+-- The structure can be automatically deduced for types implementing `Generic` with all subtypes implementing `Split` as well.
 class Split a where
     -- | The structure for the signal. Only VICompound types allow for subsignals.
-    -- | In addition the the structure of subsignals, this also controls the way the current signal is displayed.AutoSplit
-    -- | Most data will be shown as blocks, but boolean types are displayed as a single line that can be high or low (or in between for special values).
+    -- In addition the the structure of subsignals, this also controls the way the current signal is displayed.AutoSplit
+    -- Most data will be shown as blocks, but boolean types are displayed as a single line that can be high or low (or in between for special values).
     structure :: VariableInfo
     default structure :: forall x. (Generic a, AutoSplit (Rep a x)) => VariableInfo
     structure = autoStructure @(Rep a x)
 
     -- | Function to create the data for subsignals of a given type. If `structure` is not of the `VICompound` type, this list must be empty.AutoSplit
-    -- | Subsignals need to share the names and order used in `structure`, but not all subsignals need to be provided.AutoSplit
-    -- | Subsignals that are left out will be automatically set to `VRNotPresent`.
-    -- | The function is given a copy of the display value, in case this needs to be copied.
+    -- Subsignals need to share the names and order used in `structure`, but not all subsignals need to be provided.AutoSplit
+    -- Subsignals that are left out will be automatically set to `VRNotPresent`.
+    -- The function is given a copy of the display value, in case this needs to be copied.
     split :: a -> (ValueRepr,ValueKind) -> [STR]
     default split :: forall x. (Generic a, AutoSplit (Rep a x)) => a -> (ValueRepr,ValueKind) -> [STR]
     split x = autoSplit (from @a @x x) --(maybe (VRString "undefined",VKUndef) id $ safeDisplay x)
@@ -129,15 +148,15 @@ instance Split (NoSplit a) where
     split _ _ = []
 
 -- | Split a value into values for its subsignals if properly defined, else return `Nothing`.
-safeSplit :: (Split a) => a -> (ValueRepr,ValueKind) -> Maybe [STR]
-safeSplit x rk = unsafeDupablePerformIO (catch (evaluate. Just . force $ split x rk)
-                                        (\(XException _) -> return Nothing))
+safeSplit :: (Split a) => a -> (ValueRepr,ValueKind) -> [STR]
+safeSplit x rk = unsafeDupablePerformIO (catch (evaluate . force $ split x rk)
+                                        (\(_::SomeException) -> return []))
+    -- where go a = unsafeDupablePerformIO (catch (evaluate . force $ Just a)
+    --                                     (\(XException _) -> return Nothing))
 
 -- | Translate a value using `safeDisplay` and `safeSplit`. If either returns `Nothing`, return a translation representing undefined instead.
 translate :: (Display a, Split a) => a -> TranslationResult
-translate x = case safeSplit x rk of
-    Just s  -> tr rk s
-    Nothing -> tr rk []
+translate x = tr rk $ safeSplit x rk
   where rk = fromMaybe (VRString "undefined", VKUndef) (safeDisplay x)
 
 
@@ -217,6 +236,8 @@ noEmptyCompound vi = vi
 
 
 -- INSTANCES FOR TUPLES
+
+#ifndef DEFAULT_SHOWX
 instance (Show a0,Show a1) => Display (a0,a1)
 instance (Show a0,Show a1,Show a2) => Display (a0,a1,a2)
 instance (Show a0,Show a1,Show a2,Show a3) => Display (a0,a1,a2,a3)
@@ -231,6 +252,22 @@ instance (Show a0,Show a1,Show a2,Show a3,Show a4,Show a5,Show a6,Show a7,Show a
 instance (Show a0,Show a1,Show a2,Show a3,Show a4,Show a5,Show a6,Show a7,Show a8,Show a9,Show a10,Show a11,Show a12) => Display (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12)
 instance (Show a0,Show a1,Show a2,Show a3,Show a4,Show a5,Show a6,Show a7,Show a8,Show a9,Show a10,Show a11,Show a12,Show a13) => Display (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13)
 instance (Show a0,Show a1,Show a2,Show a3,Show a4,Show a5,Show a6,Show a7,Show a8,Show a9,Show a10,Show a11,Show a12,Show a13,Show a14) => Display (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14)
+#else
+instance (ShowX a0,ShowX a1) => Display (a0,a1)
+instance (ShowX a0,ShowX a1,ShowX a2) => Display (a0,a1,a2)
+instance (ShowX a0,ShowX a1,ShowX a2,ShowX a3) => Display (a0,a1,a2,a3)
+instance (ShowX a0,ShowX a1,ShowX a2,ShowX a3,ShowX a4) => Display (a0,a1,a2,a3,a4)
+instance (ShowX a0,ShowX a1,ShowX a2,ShowX a3,ShowX a4,ShowX a5) => Display (a0,a1,a2,a3,a4,a5)
+instance (ShowX a0,ShowX a1,ShowX a2,ShowX a3,ShowX a4,ShowX a5,ShowX a6) => Display (a0,a1,a2,a3,a4,a5,a6)
+instance (ShowX a0,ShowX a1,ShowX a2,ShowX a3,ShowX a4,ShowX a5,ShowX a6,ShowX a7) => Display (a0,a1,a2,a3,a4,a5,a6,a7)
+instance (ShowX a0,ShowX a1,ShowX a2,ShowX a3,ShowX a4,ShowX a5,ShowX a6,ShowX a7,ShowX a8) => Display (a0,a1,a2,a3,a4,a5,a6,a7,a8)
+instance (ShowX a0,ShowX a1,ShowX a2,ShowX a3,ShowX a4,ShowX a5,ShowX a6,ShowX a7,ShowX a8,ShowX a9) => Display (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9)
+instance (ShowX a0,ShowX a1,ShowX a2,ShowX a3,ShowX a4,ShowX a5,ShowX a6,ShowX a7,ShowX a8,ShowX a9,ShowX a10) => Display (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10)
+instance (ShowX a0,ShowX a1,ShowX a2,ShowX a3,ShowX a4,ShowX a5,ShowX a6,ShowX a7,ShowX a8,ShowX a9,ShowX a10,ShowX a11) => Display (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11)
+--instance (ShowX a0,ShowX a1,ShowX a2,ShowX a3,ShowX a4,ShowX a5,ShowX a6,ShowX a7,ShowX a8,ShowX a9,ShowX a10,ShowX a11,ShowX a12) => Display (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12)
+--instance (ShowX a0,ShowX a1,ShowX a2,ShowX a3,ShowX a4,ShowX a5,ShowX a6,ShowX a7,ShowX a8,ShowX a9,ShowX a10,ShowX a11,ShowX a12,ShowX a13) => Display (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13)
+--instance (ShowX a0,ShowX a1,ShowX a2,ShowX a3,ShowX a4,ShowX a5,ShowX a6,ShowX a7,ShowX a8,ShowX a9,ShowX a10,ShowX a11,ShowX a12,ShowX a13,ShowX a14) => Display (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14)
+#endif
 
 instance (Display a0,Split a0,Display a1,Split a1) => Split (a0,a1)
 instance (Display a0,Split a0,Display a1,Split a1,Display a2,Split a2) => Split (a0,a1,a2)
@@ -255,7 +292,11 @@ instance Split Bool where
     structure = VIBool
     split _ _ = []
 
+#ifndef DEFAULT_SHOWX
 instance (Show a) => Display (Maybe a) where
+#else
+instance (ShowX a) => Display (Maybe a) where
+#endif
 #ifdef NOTHING_DC
     kind Nothing = VKDontCare
 #else
@@ -268,7 +309,11 @@ instance (Display a, Split a) => Split (Maybe a) where
     split Nothing _ = []
     split (Just y) _ = [str "Just.0" $ translate y]
 
+#ifndef DEFAULT_SHOWX
 instance (Show a, Show b) => Display (Either a b) where
+#else
+instance (ShowX a, ShowX b) => Display (Either a b) where
+#endif
 #ifdef LEFT_ERR
     kind (Left _) = VKWarn
 #endif
@@ -291,7 +336,11 @@ deriving via NoSplit (Unsigned n) instance Split (Unsigned n)
 instance Display (Index n)
 deriving via NoSplit (Index n) instance Split (Index n)
 
+#ifndef DEFAULT_SHOWX
 instance (Show a) => Display (Vec n a)
+#else
+instance (ShowX a) => Display (Vec n a)
+#endif
 instance (KnownNat n, Split a, Display a) => Split (Vec n a) where
     structure = VICompound $ map (\i -> (show i,structure @a)) [0..(natVal $ Proxy @n)]
 

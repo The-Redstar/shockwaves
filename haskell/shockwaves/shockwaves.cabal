@@ -17,6 +17,12 @@ flag nothing-dc
   default: True
   manual: True
 
+flag default-showx
+  description:
+    Change the default implementation of `Display` to use `ShowX` instead of `Show`.
+  default: False
+  manual: True
+
 common common-options
   default-extensions:
     BangPatterns
@@ -106,20 +112,21 @@ library
   import: common-options
   hs-source-dirs: src
   exposed-modules:
-    ShockWaves
-    ShockWaves.Viewer
-    ShockWaves.Color
-    ShockWaves.Trace
-    ShockWaves.Translation
-    ShockWaves.JSON
-  other-modules:
-    ShockWaves.JSON
+    Shockwaves
+    Shockwaves.Viewer
+    Shockwaves.Color
+    Shockwaves.Trace
+    Shockwaves.PostTranslation
+    Shockwaves.JSON
+--  other-modules:
   default-language: Haskell2010
 
   if flag(left-err)
     CPP-Options: -DLEFT_ERR
   if flag(nothing-dc)
     CPP-Options: -DNOTHING_DC
+  if flag(default-showx)
+    CPP-Options: -DDEFAULT_SHOWX
 
 -- Builds the executable 'clash', with shockwaves project in scope
 executable clash
