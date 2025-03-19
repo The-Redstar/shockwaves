@@ -1,6 +1,14 @@
 
+{- |
+
+Module containing some simple color functionality for custom signal colors.
+
+-}
+
 module Shockwaves.Color (
+    -- * Color
     Color(..),
+    -- * Predefined colors
     red,yellow,green,cyan,blue,magenta,white,gray,
 ) where
 

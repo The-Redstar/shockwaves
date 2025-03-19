@@ -1,3 +1,16 @@
+{- |
+
+Module containing the main translation classes and implementations for Shockwaves.
+
+The behaviour of this module can be changed using several flags:
+
+- @left-err@ (display the `Left` variant of `Either` as an error)
+- @nothing-dc@ (display the `Nothing` variant of `Maybe` as don't-care)
+- @default-showx@ (use `ShowX` instead of `Show` for all default implementations)
+
+-}
+
+
 
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
@@ -10,15 +23,20 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 module Shockwaves.Viewer (
+    -- * Displaying values
     Display(..),
-    Split(..),
-    AutoSplit(..),
     ValueRepr(..),
     ValueKind(..),
+    DisplayX(..),
+    -- * Splitting values
+    Split(..),
     VariableInfo(..),
+    NoSplit(..), 
+    -- * Translating values
     TranslationResult(..),SubFieldTranslationResult(..),
     translate, safeDisplay, safeSplit,
-    NoSplit(..), DisplayX(..),
+    -- * Automatic splitting using Generics
+    AutoSplit(..),
 ) where
 -- import qualified WaveFormViewer as WFV
 
@@ -87,7 +105,14 @@ data ValueKind
 -- | Information about the signal structure.
 -- `VICompound` is the only variant allowed to have subsignals. Translation results must match this structure.
 -- `VIBool` and `VIClock` are displayed differently in the waveform viewer (as waves).
-data VariableInfo = VICompound [(String,VariableInfo)] | VIBits | VIBool | VIClock | VIString | VIReal deriving Show
+data VariableInfo
+    = VICompound [(String,VariableInfo)] -- ^ A signal with subsignals
+    | VIBits                             -- ^ A multiple bit signal
+    | VIBool                             -- ^ A 1-bit signal; displayed as a proper wave
+    | VIClock                            -- ^ A clock signal; displayed as a proper wave
+    | VIString                           -- ^ A simple string
+    | VIReal                             -- ^ A real number
+  deriving Show
 
 -- | A value representation similar to that used in Surfer. The structure must match that of `VariableInfo`.
 data TranslationResult = TranslationResult (ValueRepr,ValueKind) [SubFieldTranslationResult] deriving (Show,Generic,NFData,NFDataX)
@@ -130,6 +155,7 @@ class Display a where
     kind x = kind (DisplayX x)
 #endif
 
+-- | Derive via `DisplayX` to use `ShowX` instead of `Show`.
 newtype DisplayX a = DisplayX a deriving (Generic,ShowX)
 instance (ShowX a) => Display (DisplayX a) where
     repr (DisplayX x) = VRString $ take 100 $ showX x
@@ -146,20 +172,22 @@ safeDisplay x = unsafeDupablePerformIO (catch (evaluate . force . Just $ display
 -- The structure can be automatically deduced for types implementing `Generic` with all subtypes implementing `Split` as well.
 class Split a where
     -- | The structure for the signal. Only VICompound types allow for subsignals.
-    -- In addition the the structure of subsignals, this also controls the way the current signal is displayed.AutoSplit
+    -- In addition to the the structure of subsignals, this also controls the way the current signal is displayed.
     -- Most data will be shown as blocks, but boolean types are displayed as a single line that can be high or low (or in between for special values).
     structure :: VariableInfo
     default structure :: forall x. (Generic a, AutoSplit (Rep a x)) => VariableInfo
     structure = autoStructure @(Rep a x)
 
-    -- | Function to create the data for subsignals of a given type. If `structure` is not of the `VICompound` type, this list must be empty.AutoSplit
-    -- Subsignals need to share the names and order used in `structure`, but not all subsignals need to be provided.AutoSplit
+    -- | Function to create the data for subsignals of a given type. If `structure` is not of the `VICompound` type, this list must be empty.
+    -- Subsignals need to share the names and order used in `structure`, but not all subsignals need to be provided.
     -- Subsignals that are left out will be automatically set to `VRNotPresent`.
     -- The function is given a copy of the display value, in case this needs to be copied.
     split :: a -> (ValueRepr,ValueKind) -> [STR]
     default split :: forall x. (Generic a, AutoSplit (Rep a x)) => a -> (ValueRepr,ValueKind) -> [STR]
     split x = autoSplit (from @a @x x) --(maybe (VRString "undefined",VKUndef) id $ safeDisplay x)
 
+
+-- | Derive via `NoSplit` to not split a value at all.
 newtype NoSplit a = NoSplit a
 instance Split (NoSplit a) where
     structure = VIString

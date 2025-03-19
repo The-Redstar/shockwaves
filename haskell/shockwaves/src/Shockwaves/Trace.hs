@@ -1,16 +1,12 @@
 {-|
 
-`Signal.Trace`, adapted by Marijn Adriaanse for use with Shockwaves
-
-Original:
-
 Copyright  :  (C) 2018, Google Inc.
                   2019, Myrtle Software Ltd
                   2022-2024, QBayLogic B.V.
 License    :  BSD2 (see the file LICENSE)
 Maintainer :  QBayLogic B.V. <devops@qbaylogic.com>
 
-Utilities for tracing signals and dumping them in various ways. Example usage:
+`Signal.Trace`, adapted for use with Shockwaves. Example usage:
 
 @
 import Clash.Prelude hiding (writeFile)
@@ -547,13 +543,15 @@ dumpVCD#
   -> [String]
   -- ^ The names of the traces you definitely want to be dumped to the VCD file
   -> IO (Either String (Text.Text, Text.Text, Text.Text))
+  -- ^ Error or (VCD, signal types JSON, value translations JSON)
 dumpVCD# traceMap slice signal traceNames = do
   waitForTraces# traceMap signal traceNames
   m <- readIORef traceMap
   fmap (dumpVCD## slice m) getCurrentTime
 
 -- | Produce a four-state VCD (Value Change Dump) according to IEEE
--- 1364-{1995,2001}. This function fails if a trace name contains either
+-- 1364-{1995,2001}, as well as a signal-to-type table and a value translation table.
+-- This function fails if a trace name contains either
 -- non-printable or non-VCD characters.
 --
 -- Due to lazy evaluation, the created VCD files might not contain all the

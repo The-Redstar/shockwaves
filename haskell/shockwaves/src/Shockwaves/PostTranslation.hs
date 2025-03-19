@@ -1,4 +1,11 @@
 
+{- |
+
+Module for translating values after simulation (i.e. when not using `Shockwaves.Trace`).
+This module is mostly useful for experimentation.
+
+-}
+
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE NoNamedFieldPuns #-}
@@ -7,8 +14,10 @@
 {-# LANGUAGE DataKinds #-}
 
 module Shockwaves.PostTranslation (
+    -- * Translation tables
     genTable, StructF,TransF,TranslationTable, -- generating translations
     TypeFunctions(tf),                         -- matching types
+    -- * Files and command line
     translateFile,translateCmdLine             -- file input output
 ) where
 
@@ -31,6 +40,7 @@ import Shockwaves.JSON
 type StructF = VariableInfo -- ^ StructF is treated as a function returning the variable info.
 type TransF = (String -> TranslationResult) -- ^ Function translating a string of bits into a `TranslationResult`.
 
+-- | Table holding for each type label the structure of the type, and the translations of some values.
 type TranslationTable = Map String (VariableInfo,Map String TranslationResult)
 
 -- | Convert a String of bits to a BitVector
@@ -92,9 +102,9 @@ translateFile types infile outfile = do
 -- The input file format is:
 --
 -- @
--- <type>
--- <value> <value> <value> ...
--- <type>
+-- \<type\>
+-- \<value\> \<value\> \<value\> ...
+-- \<type\>
 -- ...
 -- @
 translateCmdLine :: (String -> (StructF, TransF)) -> IO ()

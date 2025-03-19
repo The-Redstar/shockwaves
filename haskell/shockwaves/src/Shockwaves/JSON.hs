@@ -1,3 +1,9 @@
+{- |
+
+Module for translating translation information to Surfer-friendly JSON format.
+
+-}
+
 {-# LANGUAGE FlexibleInstances #-}
 
 module Shockwaves.JSON(ToJSON(toJSON)) where

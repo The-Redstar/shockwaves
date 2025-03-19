@@ -1,0 +1,133 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span>
+</span><span id="line-2"></span><span class="annot"><span class="hs-comment">{- |
+
+Module containing some simple color functionality for custom signal colors.
+
+-}</span></span><span>
+</span><span id="line-7"></span><span>
+</span><span id="line-8"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Shockwaves.Color</span><span> </span><span class="hs-special">(</span><span>
+</span><span id="line-9"></span><span>    </span><span class="annot"><span class="hs-comment">-- * Color</span></span><span>
+</span><span id="line-10"></span><span>    </span><span class="annot"><a href="Shockwaves.Color.html#Color"><span class="hs-identifier">Color</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-11"></span><span>    </span><span class="annot"><span class="hs-comment">-- * Predefined colors</span></span><span>
+</span><span id="line-12"></span><span>    </span><span class="annot"><a href="Shockwaves.Color.html#red"><span class="hs-identifier">red</span></a></span><span class="hs-special">,</span><span class="annot"><a href="Shockwaves.Color.html#yellow"><span class="hs-identifier">yellow</span></a></span><span class="hs-special">,</span><span class="annot"><a href="Shockwaves.Color.html#green"><span class="hs-identifier">green</span></a></span><span class="hs-special">,</span><span class="annot"><a href="Shockwaves.Color.html#cyan"><span class="hs-identifier">cyan</span></a></span><span class="hs-special">,</span><span class="annot"><a href="Shockwaves.Color.html#blue"><span class="hs-identifier">blue</span></a></span><span class="hs-special">,</span><span class="annot"><a href="Shockwaves.Color.html#magenta"><span class="hs-identifier">magenta</span></a></span><span class="hs-special">,</span><span class="annot"><a href="Shockwaves.Color.html#white"><span class="hs-identifier">white</span></a></span><span class="hs-special">,</span><span class="annot"><a href="Shockwaves.Color.html#gray"><span class="hs-identifier">gray</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-13"></span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-14"></span><span>
+</span><span id="line-15"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Clash.Prelude</span></span><span>
+</span><span id="line-16"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Word</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Word8</span></span><span class="hs-special">)</span><span>
+</span><span id="line-17"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.DeepSeq</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">NFData</span></span><span class="hs-special">)</span><span>
+</span><span id="line-18"></span><span>
+</span><span id="line-19"></span><span class="annot"><span class="hs-comment">-- | Simple RGB representation used for custom signal colors.</span></span><span>
+</span><span id="line-20"></span><span class="hs-keyword">data</span><span> </span><span id="Color"><span class="annot"><a href="Shockwaves.Color.html#Color"><span class="hs-identifier hs-var">Color</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="RGB"><span class="annot"><a href="Shockwaves.Color.html#RGB"><span class="hs-identifier hs-var">RGB</span></a></span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Word8</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Word8</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Word8</span></span><span> </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679284481"><span id="local-6989586621679284489"><span id="local-6989586621679284493"><span class="annot"><span class="annottext">Int -&gt; Color -&gt; ShowS
+[Color] -&gt; ShowS
+Color -&gt; String
+(Int -&gt; Color -&gt; ShowS)
+-&gt; (Color -&gt; String) -&gt; ([Color] -&gt; ShowS) -&gt; Show Color
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; Color -&gt; ShowS
+showsPrec :: Int -&gt; Color -&gt; ShowS
+$cshow :: Color -&gt; String
+show :: Color -&gt; String
+$cshowList :: [Color] -&gt; ShowS
+showList :: [Color] -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">,</span><span id="local-6989586621679284497"><span id="local-6989586621679284499"><span class="annot"><span class="annottext">(forall x. Color -&gt; Rep Color x)
+-&gt; (forall x. Rep Color x -&gt; Color) -&gt; Generic Color
+forall x. Rep Color x -&gt; Color
+forall x. Color -&gt; Rep Color x
+forall a.
+(forall x. a -&gt; Rep a x) -&gt; (forall x. Rep a x -&gt; a) -&gt; Generic a
+$cfrom :: forall x. Color -&gt; Rep Color x
+from :: forall x. Color -&gt; Rep Color x
+$cto :: forall x. Rep Color x -&gt; Color
+to :: forall x. Rep Color x -&gt; Color
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Generic</span></span></span></span><span class="hs-special">,</span><span id="local-6989586621679284503"><span class="annot"><span class="annottext">Color -&gt; ()
+(Color -&gt; ()) -&gt; NFData Color
+forall a. (a -&gt; ()) -&gt; NFData a
+$crnf :: Color -&gt; ()
+rnf :: Color -&gt; ()
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var">NFData</span></span></span><span class="hs-special">,</span><span id="local-6989586621679284521"><span id="local-6989586621679284531"><span id="local-6989586621679284537"><span id="local-6989586621679284543"><span class="annot"><span class="annottext">HasCallStack =&gt; String -&gt; Color
+Color -&gt; Bool
+Color -&gt; ()
+Color -&gt; Color
+(HasCallStack =&gt; String -&gt; Color)
+-&gt; (Color -&gt; Bool)
+-&gt; (Color -&gt; Color)
+-&gt; (Color -&gt; ())
+-&gt; NFDataX Color
+forall a.
+(HasCallStack =&gt; String -&gt; a)
+-&gt; (a -&gt; Bool) -&gt; (a -&gt; a) -&gt; (a -&gt; ()) -&gt; NFDataX a
+$cdeepErrorX :: HasCallStack =&gt; String -&gt; Color
+deepErrorX :: HasCallStack =&gt; String -&gt; Color
+$chasUndefined :: Color -&gt; Bool
+hasUndefined :: Color -&gt; Bool
+$censureSpine :: Color -&gt; Color
+ensureSpine :: Color -&gt; Color
+$crnfX :: Color -&gt; ()
+rnfX :: Color -&gt; ()
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">NFDataX</span></span></span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-21"></span><span>
+</span><span id="line-22"></span><span class="annot"><span class="hs-comment">-- | #ff0000</span></span><span>
+</span><span id="line-23"></span><span class="annot"><a href="Shockwaves.Color.html#red"><span class="hs-identifier hs-type">red</span></a></span><span class="hs-glyph">::</span><span class="annot"><a href="Shockwaves.Color.html#Color"><span class="hs-identifier hs-type">Color</span></a></span><span>
+</span><span id="line-24"></span><span id="red"><span class="annot"><span class="annottext">red :: Color
+</span><a href="Shockwaves.Color.html#red"><span class="hs-identifier hs-var hs-var">red</span></a></span></span><span>     </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Word8 -&gt; Word8 -&gt; Word8 -&gt; Color
+</span><a href="Shockwaves.Color.html#RGB"><span class="hs-identifier hs-var">RGB</span></a></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">255</span></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">0</span></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">0</span></span><span>
+</span><span id="line-25"></span><span class="annot"><span class="hs-comment">-- | #ffff00</span></span><span>
+</span><span id="line-26"></span><span class="annot"><a href="Shockwaves.Color.html#yellow"><span class="hs-identifier hs-type">yellow</span></a></span><span class="hs-glyph">::</span><span class="annot"><a href="Shockwaves.Color.html#Color"><span class="hs-identifier hs-type">Color</span></a></span><span>
+</span><span id="line-27"></span><span id="yellow"><span class="annot"><span class="annottext">yellow :: Color
+</span><a href="Shockwaves.Color.html#yellow"><span class="hs-identifier hs-var hs-var">yellow</span></a></span></span><span>  </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Word8 -&gt; Word8 -&gt; Word8 -&gt; Color
+</span><a href="Shockwaves.Color.html#RGB"><span class="hs-identifier hs-var">RGB</span></a></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">255</span></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">255</span></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">0</span></span><span>
+</span><span id="line-28"></span><span class="annot"><span class="hs-comment">-- | #00ff00</span></span><span>
+</span><span id="line-29"></span><span class="annot"><a href="Shockwaves.Color.html#green"><span class="hs-identifier hs-type">green</span></a></span><span class="hs-glyph">::</span><span class="annot"><a href="Shockwaves.Color.html#Color"><span class="hs-identifier hs-type">Color</span></a></span><span>
+</span><span id="line-30"></span><span id="green"><span class="annot"><span class="annottext">green :: Color
+</span><a href="Shockwaves.Color.html#green"><span class="hs-identifier hs-var hs-var">green</span></a></span></span><span>   </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Word8 -&gt; Word8 -&gt; Word8 -&gt; Color
+</span><a href="Shockwaves.Color.html#RGB"><span class="hs-identifier hs-var">RGB</span></a></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">0</span></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">255</span></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">0</span></span><span>
+</span><span id="line-31"></span><span class="annot"><span class="hs-comment">-- | #00ffff</span></span><span>
+</span><span id="line-32"></span><span class="annot"><a href="Shockwaves.Color.html#cyan"><span class="hs-identifier hs-type">cyan</span></a></span><span class="hs-glyph">::</span><span class="annot"><a href="Shockwaves.Color.html#Color"><span class="hs-identifier hs-type">Color</span></a></span><span>
+</span><span id="line-33"></span><span id="cyan"><span class="annot"><span class="annottext">cyan :: Color
+</span><a href="Shockwaves.Color.html#cyan"><span class="hs-identifier hs-var hs-var">cyan</span></a></span></span><span>    </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Word8 -&gt; Word8 -&gt; Word8 -&gt; Color
+</span><a href="Shockwaves.Color.html#RGB"><span class="hs-identifier hs-var">RGB</span></a></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">0</span></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">255</span></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">255</span></span><span>
+</span><span id="line-34"></span><span class="annot"><span class="hs-comment">-- | #0000ff</span></span><span>
+</span><span id="line-35"></span><span class="annot"><a href="Shockwaves.Color.html#blue"><span class="hs-identifier hs-type">blue</span></a></span><span class="hs-glyph">::</span><span class="annot"><a href="Shockwaves.Color.html#Color"><span class="hs-identifier hs-type">Color</span></a></span><span>
+</span><span id="line-36"></span><span id="blue"><span class="annot"><span class="annottext">blue :: Color
+</span><a href="Shockwaves.Color.html#blue"><span class="hs-identifier hs-var hs-var">blue</span></a></span></span><span>    </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Word8 -&gt; Word8 -&gt; Word8 -&gt; Color
+</span><a href="Shockwaves.Color.html#RGB"><span class="hs-identifier hs-var">RGB</span></a></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">0</span></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">0</span></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">255</span></span><span>
+</span><span id="line-37"></span><span class="annot"><span class="hs-comment">-- | #ff00ff</span></span><span>
+</span><span id="line-38"></span><span class="annot"><a href="Shockwaves.Color.html#magenta"><span class="hs-identifier hs-type">magenta</span></a></span><span class="hs-glyph">::</span><span class="annot"><a href="Shockwaves.Color.html#Color"><span class="hs-identifier hs-type">Color</span></a></span><span>
+</span><span id="line-39"></span><span id="magenta"><span class="annot"><span class="annottext">magenta :: Color
+</span><a href="Shockwaves.Color.html#magenta"><span class="hs-identifier hs-var hs-var">magenta</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Word8 -&gt; Word8 -&gt; Word8 -&gt; Color
+</span><a href="Shockwaves.Color.html#RGB"><span class="hs-identifier hs-var">RGB</span></a></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">255</span></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">0</span></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">255</span></span><span>
+</span><span id="line-40"></span><span class="annot"><span class="hs-comment">-- | #ffffff</span></span><span>
+</span><span id="line-41"></span><span class="annot"><a href="Shockwaves.Color.html#white"><span class="hs-identifier hs-type">white</span></a></span><span class="hs-glyph">::</span><span class="annot"><a href="Shockwaves.Color.html#Color"><span class="hs-identifier hs-type">Color</span></a></span><span>
+</span><span id="line-42"></span><span id="white"><span class="annot"><span class="annottext">white :: Color
+</span><a href="Shockwaves.Color.html#white"><span class="hs-identifier hs-var hs-var">white</span></a></span></span><span>   </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Word8 -&gt; Word8 -&gt; Word8 -&gt; Color
+</span><a href="Shockwaves.Color.html#RGB"><span class="hs-identifier hs-var">RGB</span></a></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">255</span></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">255</span></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">255</span></span><span>
+</span><span id="line-43"></span><span class="annot"><span class="hs-comment">-- | #7f7f7f</span></span><span>
+</span><span id="line-44"></span><span class="annot"><a href="Shockwaves.Color.html#gray"><span class="hs-identifier hs-type">gray</span></a></span><span class="hs-glyph">::</span><span class="annot"><a href="Shockwaves.Color.html#Color"><span class="hs-identifier hs-type">Color</span></a></span><span>
+</span><span id="line-45"></span><span id="gray"><span class="annot"><span class="annottext">gray :: Color
+</span><a href="Shockwaves.Color.html#gray"><span class="hs-identifier hs-var hs-var">gray</span></a></span></span><span>    </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Word8 -&gt; Word8 -&gt; Word8 -&gt; Color
+</span><a href="Shockwaves.Color.html#RGB"><span class="hs-identifier hs-var">RGB</span></a></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">127</span></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">127</span></span><span> </span><span class="annot"><span class="annottext">Word8
+</span><span class="hs-number">127</span></span></pre></body></html>

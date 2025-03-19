@@ -1,0 +1,321 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span>
+</span><span id="line-2"></span><span class="annot"><span class="hs-comment">{- |
+
+Module for translating values after simulation (i.e. when not using `Shockwaves.Trace`).
+This module is mostly useful for experimentation.
+
+-}</span></span><span>
+</span><span id="line-8"></span><span>
+</span><span id="line-9"></span><span class="hs-pragma">{-# LANGUAGE FlexibleInstances #-}</span><span>
+</span><span id="line-10"></span><span class="hs-pragma">{-# LANGUAGE DuplicateRecordFields #-}</span><span>
+</span><span id="line-11"></span><span class="hs-pragma">{-# LANGUAGE NoNamedFieldPuns #-}</span><span>
+</span><span id="line-12"></span><span>
+</span><span id="line-13"></span><span class="hs-pragma">{-# LANGUAGE AllowAmbiguousTypes #-}</span><span>
+</span><span id="line-14"></span><span class="hs-pragma">{-# LANGUAGE DataKinds #-}</span><span>
+</span><span id="line-15"></span><span>
+</span><span id="line-16"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Shockwaves.PostTranslation</span><span> </span><span class="hs-special">(</span><span>
+</span><span id="line-17"></span><span>    </span><span class="annot"><span class="hs-comment">-- * Translation tables</span></span><span>
+</span><span id="line-18"></span><span>    </span><span class="annot"><a href="Shockwaves.PostTranslation.html#genTable"><span class="hs-identifier">genTable</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Shockwaves.PostTranslation.html#StructF"><span class="hs-identifier">StructF</span></a></span><span class="hs-special">,</span><span class="annot"><a href="Shockwaves.PostTranslation.html#TransF"><span class="hs-identifier">TransF</span></a></span><span class="hs-special">,</span><span class="annot"><a href="Shockwaves.PostTranslation.html#TranslationTable"><span class="hs-identifier">TranslationTable</span></a></span><span class="hs-special">,</span><span> </span><span class="hs-comment">-- generating translations</span><span>
+</span><span id="line-19"></span><span>    </span><span class="annot"><a href="Shockwaves.PostTranslation.html#TypeFunctions"><span class="hs-identifier">TypeFunctions</span></a></span><span class="hs-special">(</span><span class="annot"><a href="Shockwaves.PostTranslation.html#tf"><span class="hs-identifier">tf</span></a></span><span class="hs-special">)</span><span class="hs-special">,</span><span>                         </span><span class="hs-comment">-- matching types</span><span>
+</span><span id="line-20"></span><span>    </span><span class="annot"><span class="hs-comment">-- * Files and command line</span></span><span>
+</span><span id="line-21"></span><span>    </span><span class="annot"><a href="Shockwaves.PostTranslation.html#translateFile"><span class="hs-identifier">translateFile</span></a></span><span class="hs-special">,</span><span class="annot"><a href="Shockwaves.PostTranslation.html#translateCmdLine"><span class="hs-identifier">translateCmdLine</span></a></span><span>             </span><span class="hs-comment">-- file input output</span><span>
+</span><span id="line-22"></span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-23"></span><span>
+</span><span id="line-24"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Prelude</span></span><span>
+</span><span id="line-25"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">System.Environment</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">getArgs</span></span><span class="hs-special">)</span><span>
+</span><span id="line-26"></span><span>
+</span><span id="line-27"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.Map</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Map</span></span><span class="hs-special">)</span><span>
+</span><span id="line-28"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Map</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Map</span></span><span>
+</span><span id="line-29"></span><span>
+</span><span id="line-30"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">GHC.Natural</span></span><span>
+</span><span id="line-31"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">GHC.TypeLits</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">KnownNat</span></span><span class="hs-special">)</span><span>
+</span><span id="line-32"></span><span>
+</span><span id="line-33"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Clash.Sized.Internal.BitVector</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">BitVector</span></span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">BV</span></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-34"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Clash.Class.BitPack</span></span><span>   </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">BitPack</span></span><span class="hs-special">,</span><span class="annot"><span class="hs-identifier">BitSize</span></span><span class="hs-special">,</span><span class="annot"><span class="hs-identifier">unpack</span></span><span class="hs-special">)</span><span>
+</span><span id="line-35"></span><span>
+</span><span id="line-36"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Shockwaves.Viewer.html"><span class="hs-identifier">Shockwaves.Viewer</span></a></span><span>
+</span><span id="line-37"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Shockwaves.JSON.html"><span class="hs-identifier">Shockwaves.JSON</span></a></span><span>
+</span><span id="line-38"></span><span>
+</span><span id="line-39"></span><span class="hs-comment">-- the function signatures, so we can easily return the functions for the specified type</span><span>
+</span><span id="line-40"></span><span class="hs-keyword">type</span><span> </span><span id="StructF"><span class="annot"><a href="Shockwaves.PostTranslation.html#StructF"><span class="hs-identifier hs-var">StructF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="Shockwaves.Viewer.html#VariableInfo"><span class="hs-identifier hs-type">VariableInfo</span></a></span><span> </span><span class="annot"><span class="hs-comment">-- ^ StructF is treated as a function returning the variable info.</span></span><span>
+</span><span id="line-41"></span><span class="hs-keyword">type</span><span> </span><span id="TransF"><span class="annot"><a href="Shockwaves.PostTranslation.html#TransF"><span class="hs-identifier hs-var">TransF</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Shockwaves.Viewer.html#TranslationResult"><span class="hs-identifier hs-type">TranslationResult</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="hs-comment">-- ^ Function translating a string of bits into a `TranslationResult`.</span></span><span>
+</span><span id="line-42"></span><span>
+</span><span id="line-43"></span><span class="annot"><span class="hs-comment">-- | Table holding for each type label the structure of the type, and the translations of some values.</span></span><span>
+</span><span id="line-44"></span><span class="hs-keyword">type</span><span> </span><span id="TranslationTable"><span class="annot"><a href="Shockwaves.PostTranslation.html#TranslationTable"><span class="hs-identifier hs-var">TranslationTable</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Map</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Shockwaves.Viewer.html#VariableInfo"><span class="hs-identifier hs-type">VariableInfo</span></a></span><span class="hs-special">,</span><span class="annot"><span class="hs-identifier hs-type">Map</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span> </span><span class="annot"><a href="Shockwaves.Viewer.html#TranslationResult"><span class="hs-identifier hs-type">TranslationResult</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-45"></span><span>
+</span><span id="line-46"></span><span class="annot"><span class="hs-comment">-- | Convert a String of bits to a BitVector</span></span><span>
+</span><span id="line-47"></span><span id="local-6989586621679290212"><span class="annot"><a href="Shockwaves.PostTranslation.html#toBV"><span class="hs-identifier hs-type">toBV</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">KnownNat</span></span><span> </span><span class="annot"><a href="#local-6989586621679290212"><span class="hs-identifier hs-type">n</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">BitVector</span></span><span> </span><span class="annot"><a href="#local-6989586621679290212"><span class="hs-identifier hs-type">n</span></a></span></span><span>
+</span><span id="line-48"></span><span id="toBV"><span class="annot"><span class="annottext">toBV :: forall (n :: Nat). KnownNat n =&gt; String -&gt; BitVector n
+</span><a href="Shockwaves.PostTranslation.html#toBV"><span class="hs-identifier hs-var hs-var">toBV</span></a></span></span><span> </span><span id="local-6989586621679290296"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679290296"><span class="hs-identifier hs-var">s</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Nat -&gt; Nat -&gt; BitVector n
+forall (n :: Nat). Nat -&gt; Nat -&gt; BitVector n
+</span><span class="hs-identifier hs-var">BV</span></span><span> </span><span class="annot"><span class="annottext">Nat
+</span><a href="#local-6989586621679290297"><span class="hs-identifier hs-var">m</span></a></span><span> </span><span class="annot"><span class="annottext">Nat
+</span><a href="#local-6989586621679290298"><span class="hs-identifier hs-var">i</span></a></span><span>
+</span><span id="line-49"></span><span>    </span><span class="hs-keyword">where</span><span>
+</span><span id="line-50"></span><span>        </span><span class="annot"><a href="#local-6989586621679290299"><span class="hs-identifier hs-type">toNat</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Natural</span></span><span class="hs-special">,</span><span class="annot"><span class="hs-identifier hs-type">Natural</span></span><span class="hs-special">)</span><span>
+</span><span id="line-51"></span><span>        </span><span id="local-6989586621679290299"><span class="annot"><span class="annottext">toNat :: String -&gt; (Nat, Nat)
+</span><a href="#local-6989586621679290299"><span class="hs-identifier hs-var hs-var">toNat</span></a></span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;&quot;</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Nat
+</span><span class="hs-number">0</span></span><span class="hs-special">,</span><span class="annot"><span class="annottext">Nat
+</span><span class="hs-number">0</span></span><span class="hs-special">)</span><span>
+</span><span id="line-52"></span><span>        </span><span class="annot"><a href="#local-6989586621679290299"><span class="hs-identifier hs-var">toNat</span></a></span><span> </span><span class="hs-special">(</span><span id="local-6989586621679290300"><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679290300"><span class="hs-identifier hs-var">c</span></a></span></span><span class="annot"><span class="hs-glyph hs-type">:</span></span><span id="local-6989586621679290301"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679290301"><span class="hs-identifier hs-var">rest</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Nat
+</span><a href="#local-6989586621679290302"><span class="hs-identifier hs-var">da</span></a></span><span class="annot"><span class="annottext">Nat -&gt; Nat -&gt; Nat
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">+</span></span><span class="annot"><span class="annottext">Nat
+</span><span class="hs-number">2</span></span><span class="annot"><span class="annottext">Nat -&gt; Nat -&gt; Nat
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">*</span></span><span class="annot"><span class="annottext">Nat
+</span><a href="#local-6989586621679290305"><span class="hs-identifier hs-var">a</span></a></span><span class="hs-special">,</span><span class="annot"><span class="annottext">Nat
+</span><a href="#local-6989586621679290306"><span class="hs-identifier hs-var">db</span></a></span><span class="annot"><span class="annottext">Nat -&gt; Nat -&gt; Nat
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">+</span></span><span class="annot"><span class="annottext">Nat
+</span><span class="hs-number">2</span></span><span class="annot"><span class="annottext">Nat -&gt; Nat -&gt; Nat
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">*</span></span><span class="annot"><span class="annottext">Nat
+</span><a href="#local-6989586621679290307"><span class="hs-identifier hs-var">b</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-53"></span><span>            </span><span class="hs-keyword">where</span><span>
+</span><span id="line-54"></span><span>                </span><span class="hs-special">(</span><span id="local-6989586621679290305"><span class="annot"><span class="annottext">Nat
+</span><a href="#local-6989586621679290305"><span class="hs-identifier hs-var">a</span></a></span></span><span class="hs-special">,</span><span id="local-6989586621679290307"><span class="annot"><span class="annottext">Nat
+</span><a href="#local-6989586621679290307"><span class="hs-identifier hs-var">b</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String -&gt; (Nat, Nat)
+</span><a href="#local-6989586621679290299"><span class="hs-identifier hs-var">toNat</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679290301"><span class="hs-identifier hs-var">rest</span></a></span><span>
+</span><span id="line-55"></span><span>                </span><span class="hs-special">(</span><span id="local-6989586621679290302"><span class="annot"><span class="annottext">Nat
+</span><a href="#local-6989586621679290302"><span class="hs-identifier hs-var">da</span></a></span></span><span class="hs-special">,</span><span id="local-6989586621679290306"><span class="annot"><span class="annottext">Nat
+</span><a href="#local-6989586621679290306"><span class="hs-identifier hs-var">db</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679290300"><span class="hs-identifier hs-var">c</span></a></span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-56"></span><span>                    </span><span class="annot"><span class="annottext">Char
+</span><span class="hs-char">'1'</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Nat
+</span><span class="hs-number">0</span></span><span class="hs-special">,</span><span class="annot"><span class="annottext">Nat
+</span><span class="hs-number">1</span></span><span class="hs-special">)</span><span>
+</span><span id="line-57"></span><span>                    </span><span class="annot"><span class="annottext">Char
+</span><span class="hs-char">'0'</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Nat
+</span><span class="hs-number">0</span></span><span class="hs-special">,</span><span class="annot"><span class="annottext">Nat
+</span><span class="hs-number">0</span></span><span class="hs-special">)</span><span>
+</span><span id="line-58"></span><span>                    </span><span class="annot"><span class="annottext">Char
+</span><span class="hs-identifier">_</span></span><span>   </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Nat
+</span><span class="hs-number">1</span></span><span class="hs-special">,</span><span class="annot"><span class="annottext">Nat
+</span><span class="hs-number">0</span></span><span class="hs-special">)</span><span>
+</span><span id="line-59"></span><span>        </span><span class="hs-special">(</span><span id="local-6989586621679290297"><span class="annot"><span class="annottext">Nat
+</span><a href="#local-6989586621679290297"><span class="hs-identifier hs-var">m</span></a></span></span><span class="hs-special">,</span><span id="local-6989586621679290298"><span class="annot"><span class="annottext">Nat
+</span><a href="#local-6989586621679290298"><span class="hs-identifier hs-var">i</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String -&gt; (Nat, Nat)
+</span><a href="#local-6989586621679290299"><span class="hs-identifier hs-var">toNat</span></a></span><span> </span><span class="annot"><span class="annottext">(String -&gt; (Nat, Nat)) -&gt; String -&gt; (Nat, Nat)
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String
+forall a. [a] -&gt; [a]
+</span><span class="hs-identifier hs-var">reverse</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679290296"><span class="hs-identifier hs-var">s</span></a></span><span>
+</span><span id="line-60"></span><span>
+</span><span id="line-61"></span><span>
+</span><span id="line-62"></span><span class="hs-comment">-- | Get translation function for a given type.</span><span>
+</span><span id="line-63"></span><span class="hs-comment">-- This class is used to only have to specify the type once while translating.</span><span>
+</span><span id="line-64"></span><span class="hs-keyword">class</span><span> </span><span id="TypeFunctions"><span class="annot"><a href="Shockwaves.PostTranslation.html#TypeFunctions"><span class="hs-identifier hs-var">TypeFunctions</span></a></span></span><span> </span><span id="local-6989586621679290228"><span class="annot"><a href="#local-6989586621679290228"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-65"></span><span>    </span><span class="hs-comment">-- | Get translation function for the type.</span><span>
+</span><span id="line-66"></span><span>    </span><span id="tf"><span class="annot"><a href="Shockwaves.PostTranslation.html#tf"><span class="hs-identifier hs-type">tf</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Shockwaves.PostTranslation.html#StructF"><span class="hs-identifier hs-type">StructF</span></a></span><span class="hs-special">,</span><span class="annot"><a href="Shockwaves.PostTranslation.html#TransF"><span class="hs-identifier hs-type">TransF</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-67"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679290229"><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">BitPack</span></span><span> </span><span class="annot"><a href="#local-6989586621679290229"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span class="annot"><a href="Shockwaves.Viewer.html#Display"><span class="hs-identifier hs-type">Display</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679290229"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span class="annot"><a href="Shockwaves.Viewer.html#Split"><span class="hs-identifier hs-type">Split</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679290229"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Shockwaves.PostTranslation.html#TypeFunctions"><span class="hs-identifier hs-type">TypeFunctions</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679290229"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-68"></span><span>    </span><span id="local-6989586621679290322"><span class="annot"><span class="annottext">tf :: (VariableInfo, TransF)
+</span><a href="Shockwaves.PostTranslation.html#tf"><span class="hs-identifier hs-var hs-var hs-var hs-var">tf</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">forall a. Split a =&gt; VariableInfo
+</span><a href="Shockwaves.Viewer.html#structure"><span class="hs-identifier hs-var">structure</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679290229"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span class="annot"><span class="annottext">TransF
+</span><a href="#local-6989586621679290324"><span class="hs-identifier hs-var">translate'</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-69"></span><span>        </span><span class="hs-keyword">where</span><span> </span><span id="local-6989586621679290324"><span class="annot"><span class="annottext">translate' :: TransF
+</span><a href="#local-6989586621679290324"><span class="hs-identifier hs-var hs-var">translate'</span></a></span></span><span> </span><span id="local-6989586621679290325"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679290325"><span class="hs-identifier hs-var">val</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">forall a. (Display a, Split a) =&gt; a -&gt; TranslationResult
+</span><a href="Shockwaves.Viewer.html#translate"><span class="hs-identifier hs-var">translate</span></a></span><span> </span><span class="hs-glyph">@</span><span class="annot"><a href="#local-6989586621679290229"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="annot"><span class="annottext">(a -&gt; TranslationResult) -&gt; a -&gt; TranslationResult
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">BitVector (BitSize a) -&gt; a
+forall a. BitPack a =&gt; BitVector (BitSize a) -&gt; a
+</span><span class="hs-identifier hs-var">unpack</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String -&gt; BitVector (BitSize a)
+forall (n :: Nat). KnownNat n =&gt; String -&gt; BitVector n
+</span><a href="Shockwaves.PostTranslation.html#toBV"><span class="hs-identifier hs-var">toBV</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679290325"><span class="hs-identifier hs-var">val</span></a></span><span class="hs-glyph">::</span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">BitVector</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">BitSize</span></span><span> </span><span class="annot"><a href="#local-6989586621679290229"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-70"></span><span>
+</span><span id="line-71"></span><span class="hs-comment">-- | Generate a table of value representations for types, using the provided type-label-to-functions table,</span><span>
+</span><span id="line-72"></span><span class="hs-comment">-- and the list of (type label, list of values) pairs.</span><span>
+</span><span id="line-73"></span><span class="annot"><a href="Shockwaves.PostTranslation.html#genTable"><span class="hs-identifier hs-type">genTable</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Shockwaves.PostTranslation.html#StructF"><span class="hs-identifier hs-type">StructF</span></a></span><span class="hs-special">,</span><span class="annot"><a href="Shockwaves.PostTranslation.html#TransF"><span class="hs-identifier hs-type">TransF</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span class="hs-special">,</span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span class="hs-special">]</span><span class="hs-special">)</span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Shockwaves.PostTranslation.html#TranslationTable"><span class="hs-identifier hs-type">TranslationTable</span></a></span><span>
+</span><span id="line-74"></span><span id="genTable"><span class="annot"><span class="annottext">genTable :: (String -&gt; (VariableInfo, TransF))
+-&gt; [(String, [String])] -&gt; TranslationTable
+</span><a href="Shockwaves.PostTranslation.html#genTable"><span class="hs-identifier hs-var hs-var">genTable</span></a></span></span><span> </span><span id="local-6989586621679290327"><span class="annot"><span class="annottext">String -&gt; (VariableInfo, TransF)
+</span><a href="#local-6989586621679290327"><span class="hs-identifier hs-var">typeFunc</span></a></span></span><span> </span><span id="local-6989586621679290328"><span class="annot"><span class="annottext">[(String, [String])]
+</span><a href="#local-6989586621679290328"><span class="hs-identifier hs-var">typeValues</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">[(String, (VariableInfo, Map String TranslationResult))]
+-&gt; TranslationTable
+forall k a. Ord k =&gt; [(k, a)] -&gt; Map k a
+</span><span class="hs-identifier hs-var">Map.fromList</span></span><span> </span><span class="annot"><span class="annottext">([(String, (VariableInfo, Map String TranslationResult))]
+ -&gt; TranslationTable)
+-&gt; [(String, (VariableInfo, Map String TranslationResult))]
+-&gt; TranslationTable
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">((String, [String])
+ -&gt; (String, (VariableInfo, Map String TranslationResult)))
+-&gt; [(String, [String])]
+-&gt; [(String, (VariableInfo, Map String TranslationResult))]
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+</span><span class="hs-identifier hs-var">map</span></span><span> </span><span class="annot"><span class="annottext">(String, [String])
+-&gt; (String, (VariableInfo, Map String TranslationResult))
+</span><a href="#local-6989586621679290330"><span class="hs-identifier hs-var">genTable'</span></a></span><span> </span><span class="annot"><span class="annottext">[(String, [String])]
+</span><a href="#local-6989586621679290328"><span class="hs-identifier hs-var">typeValues</span></a></span><span>
+</span><span id="line-75"></span><span>    </span><span class="hs-keyword">where</span><span>
+</span><span id="line-76"></span><span>        </span><span class="annot"><a href="#local-6989586621679290330"><span class="hs-identifier hs-type">genTable'</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span class="hs-special">,</span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span class="hs-special">]</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span class="hs-special">,</span><span class="hs-special">(</span><span class="annot"><a href="Shockwaves.Viewer.html#VariableInfo"><span class="hs-identifier hs-type">VariableInfo</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Map</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span> </span><span class="annot"><a href="Shockwaves.Viewer.html#TranslationResult"><span class="hs-identifier hs-type">TranslationResult</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-77"></span><span>        </span><span id="local-6989586621679290330"><span class="annot"><span class="annottext">genTable' :: (String, [String])
+-&gt; (String, (VariableInfo, Map String TranslationResult))
+</span><a href="#local-6989586621679290330"><span class="hs-identifier hs-var hs-var">genTable'</span></a></span></span><span> </span><span class="hs-special">(</span><span id="local-6989586621679290331"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679290331"><span class="hs-identifier hs-var">ty</span></a></span></span><span class="hs-special">,</span><span id="local-6989586621679290332"><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679290332"><span class="hs-identifier hs-var">vals</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679290331"><span class="hs-identifier hs-var">ty</span></a></span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">VariableInfo
+</span><a href="#local-6989586621679290333"><span class="hs-identifier hs-var">struct</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">[(String, TranslationResult)] -&gt; Map String TranslationResult
+forall k a. Ord k =&gt; [(k, a)] -&gt; Map k a
+</span><span class="hs-identifier hs-var">Map.fromList</span></span><span> </span><span class="annot"><span class="annottext">([(String, TranslationResult)] -&gt; Map String TranslationResult)
+-&gt; [(String, TranslationResult)] -&gt; Map String TranslationResult
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">[String] -&gt; [TranslationResult] -&gt; [(String, TranslationResult)]
+forall a b. [a] -&gt; [b] -&gt; [(a, b)]
+</span><span class="hs-identifier hs-var">zip</span></span><span> </span><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679290332"><span class="hs-identifier hs-var">vals</span></a></span><span> </span><span class="annot"><span class="annottext">([TranslationResult] -&gt; [(String, TranslationResult)])
+-&gt; [TranslationResult] -&gt; [(String, TranslationResult)]
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">TransF -&gt; [String] -&gt; [TranslationResult]
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+</span><span class="hs-identifier hs-var">map</span></span><span> </span><span class="annot"><span class="annottext">TransF
+</span><a href="#local-6989586621679290334"><span class="hs-identifier hs-var">trans</span></a></span><span> </span><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679290332"><span class="hs-identifier hs-var">vals</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-78"></span><span>            </span><span class="hs-keyword">where</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679290333"><span class="annot"><span class="annottext">VariableInfo
+</span><a href="#local-6989586621679290333"><span class="hs-identifier hs-var">struct</span></a></span></span><span class="hs-special">,</span><span id="local-6989586621679290334"><span class="annot"><span class="annottext">TransF
+</span><a href="#local-6989586621679290334"><span class="hs-identifier hs-var">trans</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String -&gt; (VariableInfo, TransF)
+</span><a href="#local-6989586621679290327"><span class="hs-identifier hs-var">typeFunc</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679290331"><span class="hs-identifier hs-var">ty</span></a></span><span>
+</span><span id="line-79"></span><span>
+</span><span id="line-80"></span><span class="hs-comment">-- | Given a function to convert type strings into translation functions for that type,</span><span>
+</span><span id="line-81"></span><span class="hs-comment">-- turn the values per type from the input file into a translation table.</span><span>
+</span><span id="line-82"></span><span class="annot"><a href="Shockwaves.PostTranslation.html#translateFile"><span class="hs-identifier hs-type">translateFile</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Shockwaves.PostTranslation.html#StructF"><span class="hs-identifier hs-type">StructF</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Shockwaves.PostTranslation.html#TransF"><span class="hs-identifier hs-type">TransF</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-83"></span><span id="translateFile"><span class="annot"><span class="annottext">translateFile :: (String -&gt; (VariableInfo, TransF)) -&gt; String -&gt; String -&gt; IO ()
+</span><a href="Shockwaves.PostTranslation.html#translateFile"><span class="hs-identifier hs-var hs-var">translateFile</span></a></span></span><span> </span><span id="local-6989586621679290335"><span class="annot"><span class="annottext">String -&gt; (VariableInfo, TransF)
+</span><a href="#local-6989586621679290335"><span class="hs-identifier hs-var">types</span></a></span></span><span> </span><span id="local-6989586621679290336"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679290336"><span class="hs-identifier hs-var">infile</span></a></span></span><span> </span><span id="local-6989586621679290337"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679290337"><span class="hs-identifier hs-var">outfile</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-84"></span><span>    </span><span class="annot"><span class="annottext">String -&gt; IO ()
+</span><span class="hs-identifier hs-var">putStrLn</span></span><span> </span><span class="annot"><span class="annottext">(String -&gt; IO ()) -&gt; String -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Reading file: &quot;</span></span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679290336"><span class="hs-identifier hs-var">infile</span></a></span><span>
+</span><span id="line-85"></span><span>    </span><span id="local-6989586621679290339"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679290339"><span class="hs-identifier hs-var">content</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">String -&gt; IO String
+</span><span class="hs-identifier hs-var">readFile</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679290336"><span class="hs-identifier hs-var">infile</span></a></span><span>
+</span><span id="line-86"></span><span>    </span><span>
+</span><span id="line-87"></span><span>    </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679290341"><span class="annot"><span class="annottext">translationTable :: TranslationTable
+</span><a href="#local-6989586621679290341"><span class="hs-identifier hs-var hs-var">translationTable</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(String -&gt; (VariableInfo, TransF))
+-&gt; [(String, [String])] -&gt; TranslationTable
+</span><a href="Shockwaves.PostTranslation.html#genTable"><span class="hs-identifier hs-var">genTable</span></a></span><span> </span><span class="annot"><span class="annottext">String -&gt; (VariableInfo, TransF)
+</span><a href="#local-6989586621679290335"><span class="hs-identifier hs-var">types</span></a></span><span> </span><span class="annot"><span class="annottext">([(String, [String])] -&gt; TranslationTable)
+-&gt; [(String, [String])] -&gt; TranslationTable
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">((String, String) -&gt; (String, [String]))
+-&gt; [(String, String)] -&gt; [(String, [String])]
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+</span><span class="hs-identifier hs-var">map</span></span><span> </span><span class="annot"><span class="annottext">(String, String) -&gt; (String, [String])
+forall {a}. (a, String) -&gt; (a, [String])
+</span><a href="#local-6989586621679290342"><span class="hs-identifier hs-var">splitSnd</span></a></span><span> </span><span class="annot"><span class="annottext">([(String, String)] -&gt; [(String, [String])])
+-&gt; [(String, String)] -&gt; [(String, [String])]
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">[String] -&gt; [(String, String)]
+forall {b}. [b] -&gt; [(b, b)]
+</span><a href="#local-6989586621679290343"><span class="hs-identifier hs-var">pairs</span></a></span><span> </span><span class="annot"><span class="annottext">([String] -&gt; [(String, String)]) -&gt; [String] -&gt; [(String, String)]
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; [String]
+</span><span class="hs-identifier hs-var">lines</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679290339"><span class="hs-identifier hs-var">content</span></a></span><span>
+</span><span id="line-88"></span><span>        </span><span id="local-6989586621679290343"><span class="annot"><span class="annottext">pairs :: [b] -&gt; [(b, b)]
+</span><a href="#local-6989586621679290343"><span class="hs-identifier hs-var hs-var">pairs</span></a></span></span><span> </span><span class="hs-special">(</span><span id="local-6989586621679290345"><span class="annot"><span class="annottext">b
+</span><a href="#local-6989586621679290345"><span class="hs-identifier hs-var">x</span></a></span></span><span class="annot"><span class="hs-glyph hs-type">:</span></span><span id="local-6989586621679290346"><span class="annot"><span class="annottext">b
+</span><a href="#local-6989586621679290346"><span class="hs-identifier hs-var">y</span></a></span></span><span class="annot"><span class="hs-glyph hs-type">:</span></span><span id="local-6989586621679290347"><span class="annot"><span class="annottext">[b]
+</span><a href="#local-6989586621679290347"><span class="hs-identifier hs-var">r</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">b
+</span><a href="#local-6989586621679290345"><span class="hs-identifier hs-var">x</span></a></span><span class="hs-special">,</span><span class="annot"><span class="annottext">b
+</span><a href="#local-6989586621679290346"><span class="hs-identifier hs-var">y</span></a></span><span class="hs-special">)</span><span class="annot"><span class="annottext">(b, b) -&gt; [(b, b)] -&gt; [(b, b)]
+forall a. a -&gt; [a] -&gt; [a]
+</span><span class="hs-glyph hs-var">:</span></span><span class="annot"><span class="annottext">[b] -&gt; [(b, b)]
+</span><a href="#local-6989586621679290343"><span class="hs-identifier hs-var">pairs</span></a></span><span> </span><span class="annot"><span class="annottext">[b]
+</span><a href="#local-6989586621679290347"><span class="hs-identifier hs-var">r</span></a></span><span>
+</span><span id="line-89"></span><span>        </span><span class="annot"><a href="#local-6989586621679290343"><span class="hs-identifier hs-var">pairs</span></a></span><span> </span><span class="annot"><span class="annottext">[b]
+</span><span class="hs-identifier">_</span></span><span>       </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span>
+</span><span id="line-90"></span><span>        </span><span id="local-6989586621679290342"><span class="annot"><span class="annottext">splitSnd :: (a, String) -&gt; (a, [String])
+</span><a href="#local-6989586621679290342"><span class="hs-identifier hs-var hs-var">splitSnd</span></a></span></span><span> </span><span class="hs-special">(</span><span id="local-6989586621679290348"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679290348"><span class="hs-identifier hs-var">a</span></a></span></span><span class="hs-special">,</span><span id="local-6989586621679290349"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679290349"><span class="hs-identifier hs-var">b</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679290348"><span class="hs-identifier hs-var">a</span></a></span><span class="hs-special">,</span><span class="annot"><span class="annottext">String -&gt; [String]
+</span><span class="hs-identifier hs-var">words</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679290349"><span class="hs-identifier hs-var">b</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-91"></span><span>
+</span><span id="line-92"></span><span>    </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679290351"><span class="annot"><span class="annottext">json :: String
+</span><a href="#local-6989586621679290351"><span class="hs-identifier hs-var hs-var">json</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">TranslationTable -&gt; String
+forall a. ToJSON a =&gt; a -&gt; String
+</span><a href="Shockwaves.JSON.html#toJSON"><span class="hs-identifier hs-var">toJSON</span></a></span><span> </span><span class="annot"><span class="annottext">TranslationTable
+</span><a href="#local-6989586621679290341"><span class="hs-identifier hs-var">translationTable</span></a></span><span>
+</span><span id="line-93"></span><span>
+</span><span id="line-94"></span><span>    </span><span class="annot"><span class="annottext">String -&gt; IO ()
+</span><span class="hs-identifier hs-var">putStrLn</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Result&quot;</span></span><span>
+</span><span id="line-95"></span><span>    </span><span class="annot"><span class="annottext">String -&gt; IO ()
+</span><span class="hs-identifier hs-var">putStrLn</span></span><span> </span><span class="annot"><span class="annottext">(String -&gt; IO ()) -&gt; String -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; String -&gt; String
+forall a. Int -&gt; [a] -&gt; [a]
+</span><span class="hs-identifier hs-var">take</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">200</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679290351"><span class="hs-identifier hs-var">json</span></a></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;...&quot;</span></span><span>
+</span><span id="line-96"></span><span>    </span><span class="annot"><span class="annottext">String -&gt; IO ()
+</span><span class="hs-identifier hs-var">putStrLn</span></span><span> </span><span class="annot"><span class="annottext">(String -&gt; IO ()) -&gt; String -&gt; IO ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Saving to file: &quot;</span></span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679290337"><span class="hs-identifier hs-var">outfile</span></a></span><span>
+</span><span id="line-97"></span><span>    </span><span class="annot"><span class="annottext">String -&gt; String -&gt; IO ()
+</span><span class="hs-identifier hs-var">writeFile</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679290337"><span class="hs-identifier hs-var">outfile</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679290351"><span class="hs-identifier hs-var">json</span></a></span><span>
+</span><span id="line-98"></span><span>
+</span><span id="line-99"></span><span class="hs-comment">-- | Given a function that maps string representations of types to the translation functions for said type,</span><span>
+</span><span id="line-100"></span><span class="hs-comment">-- translate all values in the input file.</span><span>
+</span><span id="line-101"></span><span class="hs-comment">-- Run `translateFile` using the first two command line arguments for the input and output.</span><span>
+</span><span id="line-102"></span><span class="hs-comment">-- The input file format is:</span><span>
+</span><span id="line-103"></span><span class="hs-comment">--</span><span>
+</span><span id="line-104"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-105"></span><span class="hs-comment">-- \&lt;type\&gt;</span><span>
+</span><span id="line-106"></span><span class="hs-comment">-- \&lt;value\&gt; \&lt;value\&gt; \&lt;value\&gt; ...</span><span>
+</span><span id="line-107"></span><span class="hs-comment">-- \&lt;type\&gt;</span><span>
+</span><span id="line-108"></span><span class="hs-comment">-- ...</span><span>
+</span><span id="line-109"></span><span class="hs-comment">-- @</span><span>
+</span><span id="line-110"></span><span class="annot"><a href="Shockwaves.PostTranslation.html#translateCmdLine"><span class="hs-identifier hs-type">translateCmdLine</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Shockwaves.PostTranslation.html#StructF"><span class="hs-identifier hs-type">StructF</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Shockwaves.PostTranslation.html#TransF"><span class="hs-identifier hs-type">TransF</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-111"></span><span id="translateCmdLine"><span class="annot"><span class="annottext">translateCmdLine :: (String -&gt; (VariableInfo, TransF)) -&gt; IO ()
+</span><a href="Shockwaves.PostTranslation.html#translateCmdLine"><span class="hs-identifier hs-var hs-var">translateCmdLine</span></a></span></span><span> </span><span id="local-6989586621679290355"><span class="annot"><span class="annottext">String -&gt; (VariableInfo, TransF)
+</span><a href="#local-6989586621679290355"><span class="hs-identifier hs-var">types</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-112"></span><span>    </span><span id="local-6989586621679290356"><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679290356"><span class="hs-identifier hs-var">args</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">IO [String]
+</span><span class="hs-identifier hs-var">getArgs</span></span><span>
+</span><span id="line-113"></span><span>    </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679290357"><span class="annot"><span class="annottext">infile :: String
+</span><a href="#local-6989586621679290357"><span class="hs-identifier hs-var hs-var">infile</span></a></span></span><span>  </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679290356"><span class="hs-identifier hs-var">args</span></a></span><span> </span><span class="annot"><span class="annottext">[String] -&gt; Int -&gt; String
+forall a. HasCallStack =&gt; [a] -&gt; Int -&gt; a
+</span><span class="hs-operator hs-var">!!</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">0</span></span><span>
+</span><span id="line-114"></span><span>    </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679290359"><span class="annot"><span class="annottext">outfile :: String
+</span><a href="#local-6989586621679290359"><span class="hs-identifier hs-var hs-var">outfile</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679290356"><span class="hs-identifier hs-var">args</span></a></span><span> </span><span class="annot"><span class="annottext">[String] -&gt; Int -&gt; String
+forall a. HasCallStack =&gt; [a] -&gt; Int -&gt; a
+</span><span class="hs-operator hs-var">!!</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">1</span></span><span>
+</span><span id="line-115"></span><span>    </span><span class="annot"><span class="annottext">(String -&gt; (VariableInfo, TransF)) -&gt; String -&gt; String -&gt; IO ()
+</span><a href="Shockwaves.PostTranslation.html#translateFile"><span class="hs-identifier hs-var">translateFile</span></a></span><span> </span><span class="annot"><span class="annottext">String -&gt; (VariableInfo, TransF)
+</span><a href="#local-6989586621679290355"><span class="hs-identifier hs-var">types</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679290357"><span class="hs-identifier hs-var">infile</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679290359"><span class="hs-identifier hs-var">outfile</span></a></span><span>
+</span><span id="line-116"></span><span>
+</span><span id="line-117"></span></pre></body></html>
