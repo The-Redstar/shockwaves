@@ -30,9 +30,10 @@ displayT = testGroup "Display"
   ]
 
 splitT = testGroup "Split"
-  [ testCase "Single constructor" $ split (Q 5)     (VRString "?",VKNormal) @?= [SubFieldTranslationResult "0" (TranslationResult (VRString "5",VKNormal) [])]
-  , testCase "Double constructor" $ split  A        (VRString "?",VKWeak  ) @?= [SubFieldTranslationResult "A" (TranslationResult (VRString "?",VKWeak  ) [])]
-  , testCase "Undefined child"    $ split (B undef) (VRString "?",VKWeak  ) @?= [SubFieldTranslationResult "B" (TranslationResult (VRString "?",VKWeak) [SubFieldTranslationResult "0" (TranslationResult (VRString "undefined",VKUndef) [])])]
+  [ testCase "Single constructor" $ split (Q 5)                  (VRString "?",VKWeak) @?= [SubFieldTranslationResult "0" (TranslationResult (VRString "5",VKNormal) [])]
+  , testCase "Double constructor" $ split  A                     (VRString "?",VKWeak) @?= [SubFieldTranslationResult "A" (TranslationResult (VRString "?",VKWeak  ) [])]
+  , testCase "Undefined child"    $ split (B undef)              (VRString "?",VKWeak) @?= [SubFieldTranslationResult "B" (TranslationResult (VRString "?",VKWeak) [SubFieldTranslationResult "0" (TranslationResult (VRString "undefined",VKUndef) [])])]
+  , testCase "Vector"             $ split (True :> False :> Nil) (VRString "?",VKWeak) @?= [SubFieldTranslationResult "0" (TranslationResult (VRBit '1',VKNormal) []),SubFieldTranslationResult "1" (TranslationResult (VRBit '0',VKNormal) [])]
   ]
 
 structureT = testGroup "Structure"
