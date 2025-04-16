@@ -88,7 +88,7 @@ data ValueRepr
     | VRBits String   -- ^ Bitvector
     | VRString String -- ^ Text
     | VRNotPresent    -- ^ Signal not present; do not display signal at all
-  deriving (Show,Generic,NFData,NFDataX)
+  deriving (Show,Generic,NFData,NFDataX,Eq)
 
 -- | Determines the way values are displayed. For most signals, this only determines the color,
 -- but VIBool signals can have lines at different heights for the different value types.
@@ -100,7 +100,7 @@ data ValueKind
     | VKWarn          -- ^ Red
     | VKDontCare      -- ^ Blue
     | VKWeak          -- ^ Gray
-  deriving (Show,Generic,NFData,NFDataX)
+  deriving (Show,Generic,NFData,NFDataX,Eq)
 
 -- | Information about the signal structure.
 -- `VICompound` is the only variant allowed to have subsignals. Translation results must match this structure.
@@ -112,13 +112,13 @@ data VariableInfo
     | VIClock                            -- ^ A clock signal; displayed as a proper wave
     | VIString                           -- ^ A simple string
     | VIReal                             -- ^ A real number
-  deriving Show
+  deriving (Show,Eq)
 
 -- | A value representation similar to that used in Surfer. The structure must match that of `VariableInfo`.
-data TranslationResult = TranslationResult (ValueRepr,ValueKind) [SubFieldTranslationResult] deriving (Show,Generic,NFData,NFDataX)
+data TranslationResult = TranslationResult (ValueRepr,ValueKind) [SubFieldTranslationResult] deriving (Show,Generic,NFData,NFDataX,Eq)
 
 -- | A wrapper for naming compound signals.
-data SubFieldTranslationResult = SubFieldTranslationResult String TranslationResult deriving (Show,Generic,NFData,NFDataX)
+data SubFieldTranslationResult = SubFieldTranslationResult String TranslationResult deriving (Show,Generic,NFData,NFDataX,Eq)
 
 type TR = TranslationResult
 type STR = SubFieldTranslationResult

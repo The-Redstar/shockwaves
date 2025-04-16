@@ -17,7 +17,7 @@ import Data.Word (Word8)
 import Control.DeepSeq (NFData)
 
 -- | Simple RGB representation used for custom signal colors.
-data Color = RGB Word8 Word8 Word8 deriving (Show,Generic,NFData,NFDataX)
+data Color = RGB Word8 Word8 Word8 deriving (Show,Generic,NFData,NFDataX,Eq)
 
 -- | #ff0000
 red::Color
