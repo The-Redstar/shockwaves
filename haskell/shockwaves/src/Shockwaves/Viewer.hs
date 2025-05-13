@@ -505,7 +505,7 @@ instance (Show a) => Display (Vec n a)
 instance (ShowX a) => Display (Vec n a)
 #endif
 instance (KnownNat n, Split a, Display a) => Split (Vec n a) where
-    structure = VICompound $ map (\i -> (show i,structure @a)) [0..(natVal $ Proxy @n)]
+    structure = VICompound $ map (\i -> (show i,structure @a)) [0..(natVal $ Proxy @n)-1]
 
     split v _ = zipWith (\i s -> SubFieldTranslationResult (show i) (translate s)) [(0::Integer)..] (toList v)
 
