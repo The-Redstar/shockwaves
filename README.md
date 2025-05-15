@@ -18,7 +18,7 @@ Make sure all data types being traced derive `Show`, `Generic`, `Display` and `S
 Change the code for storing the `VCD` output to the format shown in `Shockwaves.Trace`. Make sure to keep the filenames the same, apart from their file extension.
 Finally, open the `VCD` file in the Surfer fork.
 
-## Posttranslation
+## Post-simulation translation
 
 This repository contains scripts and code to extract type information from generated verilog, and pre-render signal values in the VCD.
 This is all very experimental, but might be interesting to some.

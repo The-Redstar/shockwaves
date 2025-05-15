@@ -1,9 +1,9 @@
 cabal-version:       2.4
 name:                shockwaves
-version:             0.1
+version:             1.0.1
 license:             BSD-2-Clause
-author:              John Smith <john@example.com>
-maintainer:          John Smith <john@example.com>
+author:              Marijn Adriaanse <marijn@qbaylogic.com>
+maintainer:          Marijn Adriaanse <marijn@qbaylogic.com>
 
 flag left-err
   description:
