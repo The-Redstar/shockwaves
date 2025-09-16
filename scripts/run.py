@@ -80,9 +80,9 @@ if "haskell" in args:
         imports.update(i)
     
     code=(
-        "module Shockwaves where\n\n" +
+        "module ShockwavesLocal where\n\n" +
         "import Prelude\n" +
-        "import WaveForms.Translation(translateCmdLine,StructF,TransF,TypeFunctions(tf))\n\n" +
+        "import Shockwaves.PostTranslation(translateCmdLine,StructF,TransF,TypeFunctions(tf))\n\n" +
         "\n".join(f"import qualified {i}" for i in imports) +
         "\n\n" +
         "types :: String -> (StructF,TransF)\n" +
