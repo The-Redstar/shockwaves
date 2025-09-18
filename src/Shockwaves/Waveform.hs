@@ -1,9 +1,15 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Shockwaves.Waveform where
 
 import Clash.Prelude
 import Data.Proxy
 import GHC.Generics
+import Data.Map hiding (map)
+import Data.Char (isAlpha)
+import qualified Data.List
+import Data.Typeable
 
 newtype Structure = Structure [(SubLabel,Structure)]
 
@@ -13,37 +19,21 @@ type TypeName = String
 type SubLabel = String
 type TransLabel = String
 type Prec = Integer
+type BinRep = String
+type LUTLabel = TypeName
 
-data TransStyle = TSNormal | TSWarn | TSError | TSColor Color
+type TypeMap = Map TypeName WaveformMeta
+type LUTMap = Map LUTLabel LUT
+type LUT = Map BinRep Translation
+
+data WaveStyle = WSNormal | WSWarn | WSError | WSColor Color
 
 data WaveformMeta = Meta
   { trans :: Translator
   , struct :: Structure
   }
 
-data Translation = Translation (Maybe (TransLabel,TransStyle,Prec)) [(SubLabel,Translation)]
-
-class Waveform a where
-  translator :: Translator
-  -- renderer :: Renderer
-  -- splitter :: Splitter
-  run  ::       a -> (forall b. Waveform b =>       b -> c) -> [(SubLabel,c)]
-  runT :: Proxy a -> (forall b. Waveform b => Proxy b -> c) -> [(SubLabel,c)]
-  -- translate :: a -> Translation
-
-  translate :: a -> Translation
-  translate x = Translation ren subw
-    where
-      subw = run x translate
-      ren = render x subw
-
-  render :: a -> [(SubLabel,Translation)] -> Maybe (TransLabel,TransStyle,Prec)
-
-  structure :: Structure
-  structure = Structure $ runT (Proxy @a) structure'
-
-structure' :: Waveform a => Proxy a -> Structure
-structure' (_::Proxy a) = structure @a
+data Translation = Translation (Maybe (TransLabel,WaveStyle,Prec)) [(SubLabel,Translation)]
 
 data Translator
   = Translator
@@ -52,18 +42,19 @@ data Translator
     , width    :: Integer
     }
   | Ref TypeName
-
+  | WithStyle WaveStyle Translator
 
 data IntFormat = Dec | Oct | Hex | Bin
 
 data Renderer
-  = RLut
+  = RLut LUTLabel
   | RProduct
     { start :: TransLabel
     , sep   :: TransLabel
     , stop  :: TransLabel
     , preci :: Prec
     , preco :: Prec
+    , labels:: [SubLabel]
     }
   | RSum
   | RArray
@@ -77,10 +68,13 @@ data Renderer
     { signed :: Bool
     , format :: IntFormat
     }
+  | RConst
+    { val :: Maybe (TransLabel,WaveStyle,Prec)
+    }
 
 data Splitter
-  = SLut
-  | SProduct [(Maybe SubLabel, Translator)]
+  = SLut LUTLabel
+  | SProduct [(SubLabel, Translator)]
   | SSum [(SubLabel, Translator)]
   | SArray Translator
   | SNoSplit
@@ -89,74 +83,213 @@ data Splitter
 bitsize :: (BitPack a) => Proxy a -> Integer
 bitsize (_ :: Proxy a) = natVal $ Proxy @(BitSize a)
 
-newtype WaveformGeneric a = WaveformGeneric a
+typeName :: Typeable a => Proxy a -> TypeName
+typeName p = show $ typeRep p --TODO: fix it so it includes the full path
 
 
 
+class (BitPack a, Typeable a) => Waveform a where
+  meta :: WaveformMeta
+  meta = Meta{trans=translator @a, struct = undefined} --TODOstructure @a}
 
-
-newtype WaveformLUT a = WaveformLUT a
-instance (WaveformRender a,WaveformSplit a,BitPack a) => Waveform (WaveformLUT a) where
+  translator :: Translator
+  default translator :: WaveformG (Rep a ()) => Translator
   translator = Translator
-    { renderer = rendererR @a
-    , splitter = splitterS @a
-    , width = bitsize $ Proxy @a
+    { renderer = rendererG @(Rep a ())
+    , splitter = splitterG @(Rep a ()) (styles @a <> Data.List.repeat WSNormal)
+    , width = bitsize (Proxy @a)
     }
 
-  run (WaveformLUT x) = runS x
-  runT _ = runST $ Proxy @a
-
-  translate (WaveformLUT x) = Translation ren subw
+  addTypes :: TypeMap -> TypeMap
+  addTypes tm = addSubTypes @a $ insertIfMissing (typeName (Proxy @a)) (meta @a) tm
     where
-      subw = splitS x
-      ren = renderR x
+      insertIfMissing :: (Ord k) => k -> v -> Map k v -> Map k v
+      insertIfMissing k v m = if member k m then m else insert k v m
 
-  render (WaveformLUT x) _ = renderR x
-  
-  structure = structureS @a
+  addSubTypes :: TypeMap -> TypeMap
+  default addSubTypes :: WaveformG (Rep a ()) => TypeMap -> TypeMap
+  addSubTypes = addTypesG @(Rep a ())
 
-class WaveformRender a where
-  rendererR :: Renderer
-  rendererR = RLut
+  addValue :: a -> LUTMap -> LUTMap
+  default addValue :: (Generic a, WaveformG (Rep a ())) => a -> LUTMap -> LUTMap
+  addValue x = if hasLUT @a then
+                 addValueG @(Rep a ()) (from x)
+               else id
 
-  renderR :: a -> Maybe (TransLabel,TransStyle,Prec)
-  default renderR :: (Show a) => a -> Maybe (TransLabel,TransStyle,Prec)
-  renderR x = Just (show x,TSNormal,prec @a)
-  
-  prec :: Prec
-  prec = 10
+  hasLUT :: Bool
+  default hasLUT :: WaveformG (Rep a ()) => Bool
+  hasLUT = hasLUTG @(Rep a ())
+
+  translate :: a -> Translation
+
+  styles :: [WaveStyle]
+  styles = []
 
 
-class WaveformSplit a where
-  splitterS :: Splitter
-  splitterS = SLut
 
-  structureS :: Structure
-  structureS = Structure []
 
-  runS  ::       a -> (forall b. Waveform b =>       b -> c) -> [(SubLabel,c)]
-  runS _ _ = []
-  runST :: Proxy a -> (forall b. Waveform b => Proxy b -> c) -> [(SubLabel,c)]
-  runST _ _ = []
 
-  splitS :: a -> [(SubLabel, Translation)]
 
 
 
 -- a single constructor yields its rounds
 
-class RunGeneric a where
-    runG :: a -> (forall b. Waveform b => b -> c) -> [(SubLabel,c)]
-    runGT :: Proxy a -> (forall b. Waveform b => b -> c) -> [(SubLabel, c)]
+class WaveformG a where
+  translatorG :: [WaveStyle] -> Integer -> Translator
+  translatorG = translatorG' @a
+  translatorG' :: [WaveStyle] -> Integer -> Translator
+  translatorG' s w = Translator
+    { renderer = rendererG @a
+    , splitter = splitterG @a s
+    , width = w
+    }
+  rendererG :: Renderer
+  splitterG :: [WaveStyle] -> Splitter
+  addTypesG :: TypeMap -> TypeMap
+  addValueG :: a -> LUTMap -> LUTMap
+  hasLUTG :: Bool
 
-instance RunGeneric c => RunGeneric (D1 m1 (a :+: bs)) where
-    runG M1{unM1=x} = runG x
-    runGT _ = [(runGT $ Proxy @c)]
+  constructorsG :: [(SubLabel,Translator)]
+  constructorsG = undefined
 
-instance RunGeneric c => RunGeneric (D1 m1 (C1 m2 s)) where
-    runG M1{unM1=x} = runG x
-    runGT _ = runGT $ Proxy @c
+  fieldsG :: [(SubLabel,Translator)]
+  fieldsG = undefined
 
-instance (RunGeneric a, RunGeneric b) => RunGeneric (a :+: b) where
-    runG (L1 x) = runG x
-    runG (R1 y) = runG y
+
+-- void type
+instance WaveformG (D1 m1 V1 k) where
+  rendererG = RConst{ val = Nothing }
+  splitterG _ = SNoSplit
+  addTypesG = id
+  addValueG _ = id
+  hasLUTG = False
+
+wrapStyle :: WaveStyle -> Translator -> Translator
+wrapStyle WSNormal = id
+wrapStyle s = WithStyle s
+
+-- single constructor
+instance WaveformG (C1 m2 s k) => WaveformG (D1 m1 (C1 m2 s) k) where
+  translatorG [] w = translatorG' @(D1 m1 (C1 m2 s) k) [] w --should never happen
+  translatorG (s:ss) w = wrapStyle s $ translatorG' @(D1 m1 (C1 m2 s) k) (s:ss) w
+  rendererG = rendererG @(C1 m2 s k)
+  splitterG _ = splitterG @(C1 m2 s k) undefined
+  addTypesG = addTypesG @(C1 m2 s k)
+  addValueG M1{unM1=c} = addValueG @(C1 m2 s k) c
+  hasLUTG = hasLUTG @(C1 m2 s k)
+
+-- multiple constructors
+instance WaveformG ((a :+: b) k) => WaveformG (D1 m1 (a :+: b) k) where
+  rendererG = RSum
+  splitterG s = SSum $ wrapStyles $ constructorsG @((a :+: b) k)
+    where
+      wrapStyles :: [(SubLabel,Translator)] -> [(SubLabel,Translator)]
+      wrapStyles = Data.List.zipWith ($) (Data.List.map (\style (sb,trans) -> (sb,wrapStyle style trans)) s)
+  addTypesG = addTypesG @((a :+: b) k)
+  addValueG M1{unM1=c} = addValueG @((a :+: b) k) c
+  hasLUTG = hasLUTG @((a :+: b) k)
+
+instance (WaveformG (a k), WaveformG (b k)) => WaveformG ((a :+: b) k) where
+  rendererG = undefined
+  splitterG = undefined
+  addTypesG = addTypesG @(a k) . addTypesG @(b k)
+  addValueG (L1 x) = addValueG @(a k) x
+  addValueG (R1 x) = addValueG @(b k) x
+  hasLUTG = hasLUTG @(a k) || hasLUTG @(b k)
+  constructorsG = constructorsG @(a k) <> constructorsG @(b k)
+
+
+-- struct
+instance (WaveformG (fields k), KnownSymbol name) => WaveformG (C1 (MetaCons name fix True) fields k) where
+  rendererG = RProduct
+    { start  = symbolVal (Proxy @name) <> "{"
+    , sep    = ", "
+    , stop   = "}"
+    , preci  = 0
+    , preco  = 11
+    , labels = Data.List.map fst (fieldsG @(fields k))
+    }
+  splitterG _ = SProduct (fieldsG @(fields k))
+  addTypesG = addTypesG @(fields k)
+  addValueG M1{unM1=x} = addValueG @(fields k) x
+  hasLUTG = hasLUTG @(fields k)
+  constructorsG = [
+    ( symbolVal (Proxy @name)
+    , Translator
+      { renderer = rendererG @((C1 (MetaCons name fix True) fields) k)
+      , splitter = splitterG @((C1 (MetaCons name fix True) fields) k) undefined
+      , width = -1 -- TODO sum $ (...field widths...)
+      }
+    )]
+
+
+-- add parentheses around operators when not used as a binary operator
+safeName :: String -> String
+safeName n = if isAlpha $ Data.List.head n then n else "("<>n<>")"
+
+-- applicative product
+instance (WaveformG (fields k), KnownSymbol name) => WaveformG (C1 (MetaCons name fix False) fields k) where
+  rendererG = RProduct
+    { start  = safeName (symbolVal (Proxy @name)) <> " "
+    , sep    = " "
+    , stop   = ""
+    , preci  = 10
+    , preco  = 10
+    , labels = []
+    }
+  splitterG _ = SProduct (fieldsG @(fields k))
+  addTypesG = addTypesG @(fields k)
+  addValueG M1{unM1=x} = addValueG @(fields k) x
+  hasLUTG = hasLUTG @(fields k)
+  constructorsG = [
+    ( symbolVal (Proxy @name)
+    , Translator
+      { renderer = rendererG @((C1 (MetaCons name fix True) fields) k)
+      , splitter = splitterG @((C1 (MetaCons name fix True) fields) k) undefined
+      , width = -1 -- TODO sum $ (...field widths...)
+      }
+    )]
+
+-- multiple fields
+instance (WaveformG (a k), WaveformG (b k)) => WaveformG ((a :*: b) k) where
+  rendererG = undefined
+  splitterG = undefined
+  addTypesG = addTypesG @(a k) . addTypesG @(b k)
+  addValueG (x :*: y) = addValueG @(a k) x . addValueG @(b k) y
+  hasLUTG = hasLUTG @(a k) || hasLUTG @(b k)
+  fieldsG = fieldsG @(a k) <> fieldsG @(b k)
+
+-- struct field
+instance (Waveform t, KnownSymbol fname) => WaveformG (S1 (MetaSel (Just fname) p q r) (Rec0 t) k) where
+  rendererG = undefined
+  splitterG = undefined
+  addTypesG = addTypes @t
+  addValueG M1{unM1=K1{unK1=x}} = addValue @t x
+  hasLUTG = hasLUT @t
+  fieldsG = [(symbolVal (Proxy @fname), Ref $ typeName (Proxy @t))]
+
+-- unnamed field
+instance (Waveform t) => WaveformG (S1 (MetaSel Nothing p q r) (Rec0 t) k) where
+  rendererG = undefined
+  splitterG = undefined
+  addTypesG = addTypes @t
+  addValueG M1{unM1=K1{unK1=x}} = addValue @t x
+  hasLUTG = hasLUT @t
+  fieldsG = [("", Ref $ typeName (Proxy @t))]
+
+
+
+
+
+-- implementations
+
+instance (KnownNat n) => Waveform (Unsigned n) where
+  translator = Translator
+    { renderer = RInt{signed=False,format=Dec}
+    , splitter = SNoSplit
+    , width = natVal (Proxy @n)
+    }
+  translate = undefined -- TODO
+  hasLUT = False
+  addValue _ = id
+  addSubTypes = id
