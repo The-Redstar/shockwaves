@@ -100,6 +100,7 @@ common common-options
     bytestring,
     text,
     deepseq,
+    singletons,
 
     -- clash-prelude will set suitable version bounds for the plugins
     clash-prelude >= 1.8.2 && < 1.10,
@@ -112,7 +113,12 @@ library
   import: common-options
   hs-source-dirs: src
   exposed-modules:
-    Shockwaves.Waveform
+    Shockwaves.Internal.Types
+    Shockwaves.Internal.Waveform
+    Shockwaves.Internal.Binary
+    Shockwaves.Internal.Render
+    Shockwaves.Style
+    Shockwaves.Trace
     -- Shockwaves
     -- Shockwaves.Viewer
     -- Shockwaves.Color
