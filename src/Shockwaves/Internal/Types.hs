@@ -5,6 +5,7 @@ module Shockwaves.Internal.Types where
 import Clash.Prelude
 import Shockwaves.Style (Color)
 import Data.Map as M
+import Data.Data (Typeable)
 
 -- some type aliases for clarity
 type TypeName = String -- name of a type
@@ -26,7 +27,7 @@ data Translation = Translation (Maybe (Value,WaveStyle,Prec)) [(SubSignal,Transl
 data WaveStyle = WSNormal | WSWarn | WSError | WSColor Color deriving (Show)
 
 
-data NumberFormat = NFDec | NFHex | NFOct | NFBin deriving (Show)
+data NumberFormat = NFDec | NFHex | NFOct | NFBin deriving (Show, Typeable)
 
 newtype Structure = Structure [(SubSignal,Structure)]
 
