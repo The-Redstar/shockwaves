@@ -13,12 +13,14 @@ import Data.Colour.SRGB (RGB(..))
 -- some type aliases for clarity
 type TypeName = String -- name of a type
 type SubSignal = String -- name of a subsignal
+type SignalName = SubSignal -- name of a signal
 type Value = String -- text displayed as the value of a signal
 type Prec = Integer -- operator precedence of the value
 type Render = Maybe (Value, WaveStyle, Prec)
 type BinRep = String -- binary representation of a haskell value (like bitvector, but arbitrarily sized)
 type LUTName = TypeName -- reference to a LUT
 
+type SignalMap = Map SignalName TypeName
 type TypeMap = Map TypeName WaveformMeta -- map of type metainformation
 type LUTMap = Map LUTName LUT -- table of all luts
 type LUT = Map BinRep Translation -- single lut

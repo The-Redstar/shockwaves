@@ -42,7 +42,8 @@ bitsize :: (BitPack a) => Proxy a -> Integer
 bitsize (_ :: Proxy a) = natVal $ Proxy @(BitSize a)
 
 typeName :: Typeable a => Proxy a -> TypeName
-typeName p = show $ typeRep p --TODO: fix it so it includes the full path
+typeName p = show (typeRepFingerprint r) <> ":" <> (show r) --TODO: fix it so it includes the full path
+  where r = typeRep p
 
 insertIfMissing :: (Ord k) => k -> v -> Map k v -> Map k v
 insertIfMissing k v m = if member k m then m else M.insert k v m
@@ -563,8 +564,8 @@ instance WaveformConst () where
 instance Waveform Bool where
   structure = Structure []
   translator = Translator 1 $ TSum
-    [ (Nothing,Translator 0 $ TConst $ Translation (Just("False",WSNormal,11)) [])
-    , (Nothing,Translator 0 $ TConst $ Translation (Just("True",WSNormal,11)) [])]
+    [ (Nothing,Translator 0 $ TConst $ Translation (Just ("False",WSNormal,11)) [])
+    , (Nothing,Translator 0 $ TConst $ Translation (Just ("True",WSNormal,11)) [])]
   addSubtypes = id
   addValue _ = id
 
@@ -737,7 +738,7 @@ class WaveformRTree (isLeaf::Bool) d a where
   addSubtypesRTree :: TypeMap -> TypeMap
   translateRTree :: RTree d a -> Translation
 instance (Waveform a) => WaveformRTree True 0 a where
-  addValueRTree t = if hasLUT @a then 
+  addValueRTree t = if hasLUT @a then
     case t of
       RLeaf x -> addValue x
       _ -> undefined
@@ -750,7 +751,7 @@ instance (Waveform a) => WaveformRTree True 0 a where
         _ -> undefined
       ren = render (translator @(RTree 0 a)) subs
 instance (Waveform (RTree d1 a), Waveform a, d ~ d1 + 1, KnownNat d1) => WaveformRTree False d a where
-  addValueRTree t = if hasLUT @a then 
+  addValueRTree t = if hasLUT @a then
     case t of
       RBranch x y -> addValue (x:: RTree d1 a) . addValue y
       _ -> undefined
