@@ -100,6 +100,8 @@ common common-options
     bytestring,
     text,
     deepseq,
+    aeson,
+    colour,
 
     -- clash-prelude will set suitable version bounds for the plugins
     clash-prelude >= 1.8.2 && < 1.10,
@@ -116,6 +118,7 @@ library
     Shockwaves.Internal.Waveform
     Shockwaves.Internal.Binary
     Shockwaves.Internal.Render
+    Shockwaves.Internal.JSON
     Shockwaves.Style
     Shockwaves.Trace
     -- Shockwaves

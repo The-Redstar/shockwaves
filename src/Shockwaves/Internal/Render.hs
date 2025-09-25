@@ -31,7 +31,8 @@ parenthesize :: Value -> Value
 parenthesize n = "("<>n<>")"
 
 joinWith :: Value -> [Value] -> Value
-joinWith s (x:xs) = x <> joinWith s xs
+joinWith s (x:y:r) = x <> s <> joinWith s (y:r)
+joinWith _ [x] = x 
 joinWith _ [] = ""
 
 getVal :: Translation -> Value
@@ -63,10 +64,10 @@ render (Translator _ translator) subs = case translator of
           Nothing -> id
   TConst (Translation ren _) -> ren
   TArray
-    { elems
+    { len
     , start, sep, stop
     , preci, preco
-    } -> if L.length subs == elems then
+    } -> if L.length subs == len then
            Just (start <> joinWith sep (L.map (getVal . applyPrec preci . snd) subs) <> stop, WSNormal, preco)
          else
            renError "Values missing"
