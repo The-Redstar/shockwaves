@@ -1,5 +1,6 @@
 {-# LANGUAGE NoFieldSelectors #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Shockwaves.Internal.Types where
 import Clash.Prelude hiding (sub)
@@ -9,6 +10,7 @@ import Data.Data (Typeable)
 
 import Data.Aeson hiding (Value)
 import Data.Colour.SRGB (RGB(..))
+import Control.DeepSeq (NFData)
 
 -- some type aliases for clarity
 type TypeName = String -- name of a type
@@ -28,11 +30,14 @@ type LUT = Map BinRep Translation -- single lut
 
 
 -- Translations
-data Translation = Translation (Maybe (Value,WaveStyle,Prec)) [(SubSignal,Translation)] deriving (Show,Generic,ToJSON)
-data WaveStyle = WSNormal | WSWarn | WSError | WSColor Color deriving (Show)
+data Translation = Translation (Maybe (Value,WaveStyle,Prec)) [(SubSignal,Translation)] deriving (Show,Generic,ToJSON,NFData)
+data WaveStyle = WSNormal | WSWarn | WSError | WSColor Color deriving (Show, Generic, NFData)
+
+deriving instance Generic Color -- TODO: move back to custom color class? would be a shame
+deriving instance NFData Color
 
 
-data NumberFormat = NFDec | NFHex | NFOct | NFBin deriving (Show, Typeable)
+data NumberFormat = NFDec | NFHex | NFOct | NFBin deriving (Show, Typeable, Generic, NFData)
 
 newtype Structure = Structure [(SubSignal,Structure)] deriving (Show,Generic,ToJSON)
 

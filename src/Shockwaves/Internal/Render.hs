@@ -14,7 +14,7 @@ applyStyleR s (Just (l,WSNormal,p)) = Just (l,s,p)
 applyStyleR _ r = r
 
 renError :: Value -> Render
-renError v = Just ("{" <> v <> "}", WSError, 11)
+renError v = Just (v, WSError, 11)
 
 applyPrec :: Prec -> Translation -> Translation
 applyPrec p (Translation r s) = Translation (applyPrecR p r) s
@@ -47,7 +47,7 @@ render (Translator _ translator) subs = case translator of
   TNumber{} -> errorX "Number translators require a custom implementation of Waveform.translate that does not call render"
   TSum _ -> case subs of
     (_,Translation ren _):_ -> ren
-    _ -> renError "failed to split"
+    _ -> renError "{invalid variant}"
   TProduct
     { start, sep, stop
     , labels
@@ -70,7 +70,7 @@ render (Translator _ translator) subs = case translator of
     } -> if L.length subs == len then
            Just (start <> joinWith sep (L.map (getVal . applyPrec preci . snd) subs) <> stop, WSNormal, preco)
          else
-           renError "Values missing"
+           renError "{values missing}"
 
   TStyled sty t -> applyStyleR sty $ render t subs
   TMaybe _ -> case subs of

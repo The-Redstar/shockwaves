@@ -35,15 +35,16 @@ import Data.Word            (Word8,Word16,Word32,Word64)
 import Data.Complex         (Complex)
 import Data.Ord             (Down)
 import Data.Functor.Identity(Identity)
+import Control.Exception (SomeException, evaluate, catch)
+import GHC.IO (unsafeDupablePerformIO)
+import Control.DeepSeq (force, NFData)
 
 
 
 bitsize :: (BitPack a) => Proxy a -> Integer
 bitsize (_ :: Proxy a) = natVal $ Proxy @(BitSize a)
 
-typeName :: Typeable a => Proxy a -> TypeName
-typeName p = show (typeRepFingerprint r) <> ":" <> (show r) --TODO: fix it so it includes the full path
-  where r = typeRep p
+
 
 insertIfMissing :: (Ord k) => k -> v -> Map k v -> Map k v
 insertIfMissing k v m = if member k m then m else M.insert k v m
@@ -67,13 +68,41 @@ class (KnownSymbol s) => QuickSymbol s where
 instance (KnownSymbol s) => QuickSymbol s
 
 
+typeNameP :: Typeable a => Proxy a -> TypeName
+typeNameP p = show (typeRepFingerprint r) <> ":" <> show r --TODO: fix it so it includes the full path
+  where r = typeRep p
 
+errMsg :: Maybe Value -> Value
+errMsg = maybe "undefined" (\e -> "{undefined:"<>e<>"}")
 
+transError :: Value -> Translation
+transError e = Translation (renError e) []
+
+safeVal :: (NFData a) => a -> Either (Maybe Value) a
+safeVal x = unsafeDupablePerformIO (catch
+              ( evaluate . force $ unsafeDupablePerformIO (catch (evaluate . force $ Right x)
+                                         (\(_::SomeException) -> return $ Left Nothing)))
+              (\(XException e) -> return $ Left (Just e)))
+
+safeValOrMsg :: (NFData a) => (Value -> a) -> a -> a
+safeValOrMsg f x = case safeVal x of
+  Right x' -> x'
+  Left e -> f $ errMsg e
+
+safeTranslate :: ([(SubSignal,Translation)] -> Render) -> [(SubSignal,Translation)] -> Translation
+safeTranslate renF subsL = case safeVal subsL of
+  Right subs -> case safeVal $ renF subs of
+    Right ren -> Translation ren $ filterSignals subs
+    Left e -> Translation (renError $ errMsg e) $ filterSignals subs
+  Left e -> transError $ errMsg e
 
 ----------------------------------------------- WAVEFORM --------------------------------------
 
 
 class (BitPack a, Typeable a) => Waveform a where
+  typeName :: TypeName
+  typeName = typeNameP (Proxy @a)
+
   meta :: WaveformMeta
   meta = Meta
     { trans = translator @a
@@ -89,18 +118,21 @@ class (BitPack a, Typeable a) => Waveform a where
   translator = translatorG @(Rep a ()) (width @a) (styles' @a)
 
   translate :: a -> Translation
-  default translate :: (Generic a, WaveformG (Rep a ())) => a -> Translation
-  translate x = Translation ren $ filterSignals subs
-    where
-      subs = splitG (from x :: Rep a ())
-      ren = render (translator @a) subs
+  translate x = case safeVal (translate' x) of
+    Right t -> t
+    Left Nothing -> transError "undefined"
+    Left (Just e) -> transError ("{undefined: "<>e<>"}")
+
+  translate' :: a -> Translation
+  default translate' :: (Generic a, WaveformG (Rep a ())) => a -> Translation
+  translate' x = safeTranslate (render $ translator @a) $ splitG (from x :: Rep a ())
 
   addTypes :: TypeMap -> TypeMap
   addTypes tm = if M.member self tm then
                   tm
                 else
                   addSubtypes @a $ M.insert self (meta @a) tm
-    where self = typeName (Proxy @a)
+    where self = typeName @a
     --addSubtypes @a $ insertIfMissing (typeName (Proxy @a)) (meta @a) tm
 
   addSubtypes :: TypeMap -> TypeMap
@@ -318,7 +350,7 @@ instance (Waveform t, KnownSymbol name) => WaveformG (S1 (MetaSel (Just name) p 
   addValueG M1{unM1=K1{unK1=x}} = addValue @t x
   hasLUTG = hasLUT @t
 
-  fieldsG = [(sym @name, Translator (width @t) $ TRef $ typeName (Proxy @t))]
+  fieldsG = [(sym @name, Translator (width @t) $ TRef $ typeName @t)]
   widthG = width @t
 
 -- unnamed field
@@ -330,7 +362,7 @@ instance (Waveform t) => WaveformG (S1 (MetaSel Nothing p q r) (Rec0 t) k) where
   addValueG M1{unM1=K1{unK1=x}} = addValue @t x
   hasLUTG = hasLUT @t
 
-  fieldsG = [("", Translator (width @t) $ TRef $ typeName (Proxy @t))]
+  fieldsG = [("", Translator (width @t) $ TRef $ typeName @t)]
   widthG = width @t
 
 
@@ -351,13 +383,15 @@ class (Typeable a, BitPack a) => WaveformLUT a where
   structureL = structureG @(Rep a ())
 
   translateL :: a -> Translation
-  translateL x = Translation (displayL x) (splitL x)
+  translateL x = Translation
+    (safeValOrMsg renError $ displayL x)
+    (safeValOrMsg (const []) $ splitL x)
 
   splitL :: a -> [(SubSignal,Translation)]
   default splitL :: (Generic a, WaveformG (Rep a ())) => a -> [(SubSignal,Translation)]
   splitL x = splitG (from x :: Rep a ())
 
-  displayL :: a -> Maybe (Value,WaveStyle,Prec)
+  displayL :: a -> Render
   displayL x = Just (labelL x, styleL x, precL x)
 
   labelL :: a -> Value
@@ -365,7 +399,8 @@ class (Typeable a, BitPack a) => WaveformLUT a where
   labelL = show
 
   precL :: a -> Prec
-  precL _ = undefined -- TODO
+  default precL :: (Generic a, PrecG (Rep a ())) => a -> Prec
+  precL x = precG (from x :: Rep a ())
 
   styleL :: a -> WaveStyle
   styleL _ = WSNormal
@@ -374,14 +409,14 @@ newtype WaveformForLUT a = WfLUT a deriving (Generic,BitPack,Typeable)
 
 instance (WaveformLUT a, BitPack a, Typeable a) => Waveform (WaveformForLUT a) where
   structure = structureL @a
-  translator = Translator (width @(WaveformForLUT a)) $ TLut $ typeName (Proxy @a)
-  translate (WfLUT x) = translateL x
+  translator = Translator (width @(WaveformForLUT a)) $ TLut $ typeNameP (Proxy @a)
+  translate' (WfLUT x) = translateL x
 
   addSubtypes = id
 
   addValue x m = M.insert ty (insertIfMissing bin trans $ M.findWithDefault M.empty ty m) m
     where
-      ty = typeName (Proxy @a)
+      ty = typeNameP (Proxy @a)
       bin = binPack x
       trans = translate x
 
@@ -402,32 +437,32 @@ instance (WaveformLUT a, BitPack a, Typeable a) => Waveform (WaveformForLUT a) w
 
 ----------------------------------------------- PREC ----------------------------------
 
--- class (Generic a) => PrecG a where
---   precG :: a -> Prec
---   nFields :: Integer
---   nFields = undefined
+class (Generic a) => PrecG a where
+  precG :: a -> Prec
+  nFields :: Integer
+  nFields = undefined
 
--- -- get constructor(s)
--- instance PrecG (c k) => PrecG (D1 m1 c k) where
---   precG M1{unM1=x} = precG x
+-- get constructor(s)
+instance PrecG (c k) => PrecG (D1 m1 c k) where
+  precG M1{unM1=x} = precG x
 
--- -- no constructors (void tpye)
--- instance PrecG (V1 k) where
---   precG _ = 11
+-- no constructors (void tpye)
+instance PrecG (V1 k) where
+  precG _ = 11
 
--- -- multiple constructors
--- instance (PrecG (a k), PrecG (b k)) => PrecG ((a :+: b) k) where
---   precG (L1 x) = precG x
---   precG (R1 y) = precG y
+-- multiple constructors
+instance (PrecG (a k), PrecG (b k)) => PrecG ((a :+: b) k) where
+  precG (L1 x) = precG x
+  precG (R1 y) = precG y
 
--- instance (PrecG (fields k), PrecF fix) => PrecG (C1 (MetaCons name fix True) fields k) where
---   precG _ = if nFields @(fields k) == 0 then 11 else precF @fix--prec $ fromSing $ sing @fix
+instance (PrecG (fields k), PrecF fix) => PrecG (C1 (MetaCons name fix True) fields k) where
+  precG _ = if nFields @(fields k) == 0 then 11 else precF @fix--prec $ fromSing $ sing @fix
 
 
--- -- count fields
--- instance PrecG (U1 k) where
---   precG = undefined
---   nFields = 0
+-- count fields
+instance PrecG (U1 k) where
+  precG = undefined
+  nFields = 0
 
 -- instance (PrecG (a k), PrecG (b k)) => PrecG ((a :*: b) k) where
 --   precG = undefined
@@ -457,9 +492,10 @@ class (BitPack a, Typeable a) => WaveformConst a where
 newtype WaveformForConst a = WfConst a deriving (Generic,BitPack,Typeable)
 
 instance (WaveformConst a, BitPack a, Typeable a) => Waveform (WaveformForConst a) where
+  typeName = typeNameP (Proxy @a)
   structure = Structure []
   translator = Translator 0 $ TConst $ Translation (constTrans @a) []
-  translate _ = Translation (constTrans @a) []
+  translate' _ = Translation (constTrans @a) []
   addSubtypes = id
   addValue _ = id
   hasLUT = False
@@ -471,9 +507,10 @@ instance (WaveformConst a, BitPack a, Typeable a) => Waveform (WaveformForConst 
 newtype WaveformForNumber (b::Bool) (f::NumberFormat) a = WfNum a deriving (Generic,BitPack,Typeable)
 
 instance (BitPack a, Typeable a, Typeable s, Typeable f, KnownBool s, KnownNFormat f, Integral a) => Waveform (WaveformForNumber (s::Bool) (f::NumberFormat) a) where
+  typeName = typeNameP (Proxy @a)
   structure = Structure []
   translator = Translator 0 $ TNumber{signed = boolVal (Proxy @s), format = formatVal (Proxy @f)}
-  translate (WfNum x) = case formatVal $ Proxy @f of
+  translate' (WfNum x) = case formatVal $ Proxy @f of
     NFDec -> Translation (Just (show $ toInteger x,WSNormal,11)) []
     _ -> undefined -- TODO; other formats are per-bit
   addSubtypes = id
@@ -584,19 +621,25 @@ instance (Waveform a, Waveform b) => Waveform (Either a b)
 instance (BitPack Char) => WaveformLUT Char where
   structureL = Structure []
   splitL _ = []
+  precL _ = 11
 deriving via WaveformForLUT Char instance (BitPack Char) => Waveform Char
 
-instance WaveformLUT Bit
+instance WaveformLUT Bit where 
+  structureL = Structure []
+  splitL _ = []
+  precL _ = 11
 deriving via WaveformForLUT Bit instance Waveform Bit
 
 instance WaveformLUT Double where
   structureL = Structure []
   splitL _ = []
+  precL _ = 11
 deriving via WaveformForLUT Double instance Waveform Double
 
 instance WaveformLUT Float where
   structureL = Structure []
   splitL _ = []
+  precL _ = 11
 deriving via WaveformForLUT Float instance Waveform Float
 
 deriving via WaveformForNumber True NFDec Int instance Waveform Int
@@ -660,14 +703,13 @@ instance (KnownNat n, Waveform a) => Waveform (Vec n a) where
       , preci = 5
       , preco = 5
       , len = fromIntegral $ natVal (Proxy @n)
-      , sub = Translator (width @a) $ TRef $ typeName (Proxy @a)
+      , sub = Translator (width @a) $ TRef $ typeName @a
       }
     else
       TConst $ Translation (Just ("Nil",WSNormal,11)) []
-  translate v = Translation ren subs
-    where
-      subs = L.zipWith (\i x -> (show i,translate x)) [(0::Int)..] $ Clash.Prelude.toList v
-      ren = render (translator @(Vec n a)) subs
+  translate' v = safeTranslate (render $ translator @(Vec n a)) $
+    L.zipWith (\i x -> (show i,translate x)) [(0::Int)..] $ Clash.Prelude.toList v
+
   addSubtypes = addTypes @a
   addValue v = L.foldl (.) id $ L.map addValue $ Clash.Prelude.toList v
   hasLUT = hasLUT @a
@@ -681,6 +723,7 @@ deriving via WaveformForNumber False NFBin (BitVector n) instance (KnownNat n) =
 instance (BitPack (Fixed r i f), KnownNat i, KnownNat f, Show (Fixed r i f), Typeable r) => WaveformLUT (Fixed r i f) where
   structureL = Structure []
   splitL _ = []
+  precL _ = 11
 deriving via WaveformForLUT (Fixed r i f)
   instance (BitPack (Fixed r i f), KnownNat i, KnownNat f, Show (Fixed r i f), Typeable r) => Waveform (Fixed r i f)
 
@@ -715,7 +758,7 @@ instance (Waveform a, KnownNat d, WaveformRTree (RTreeIsLeaf d) d a) => Waveform
         , labels = []
         , preci = 10
         , preco = 10
-        , subs = [("0",Translator (width @a) $ TRef $ typeName (Proxy @a))]
+        , subs = [("0",Translator (width @a) $ TRef $ typeName @a)]
         }
     else
       TProduct
@@ -727,8 +770,8 @@ instance (Waveform a, KnownNat d, WaveformRTree (RTreeIsLeaf d) d a) => Waveform
         , preco = 11
         , subs = [("left",tsub),("right",tsub)]
         }
-    where tsub = Translator (width @(RTree d a)) $ TRef $ typeName (Proxy @a)
-  translate = translateRTree @(RTreeIsLeaf d) @d @a
+    where tsub = Translator (width @(RTree d a)) $ TRef $ typeName @a
+  translate' = translateRTree @(RTreeIsLeaf d) @d @a
   addSubtypes = addSubtypesRTree @(RTreeIsLeaf d) @d @a
   addValue = addValueRTree @(RTreeIsLeaf d) @d @a
   hasLUT = hasLUT @a
@@ -744,12 +787,11 @@ instance (Waveform a) => WaveformRTree True 0 a where
       _ -> undefined
     else id
   addSubtypesRTree = addTypes @a
-  translateRTree t = Translation ren subs
+  translateRTree t = safeTranslate (render (translator @(RTree 0 a))) subs--Translation ren subs
     where
       subs = case t of
         RLeaf x -> [("0",translate x)]
         _ -> undefined
-      ren = render (translator @(RTree 0 a)) subs
 instance (Waveform (RTree d1 a), Waveform a, d ~ d1 + 1, KnownNat d1) => WaveformRTree False d a where
   addValueRTree t = if hasLUT @a then
     case t of
