@@ -11,8 +11,7 @@ Utilities for tracing signals and dumping them in various ways. Example usage:
 @
 import Clash.Prelude hiding (writeFile)
 import Data.Text.IO  (writeFile)
-import Data.Aeson as Aeson
-import qualified Data.Bytestring as B
+import Data.Aeson (encodeFile)
 
 -- | Count and wrap around
 subCounter :: SystemClockResetEnable => Signal System (Index 3)
@@ -46,7 +45,7 @@ main = do
       error msg
     Right (contents,meta) -> do
       writeFile "mainCounter.vcd" contents
-      B.writeFile "mainCounter.vcd" $ Aeson.encode meta
+      encodeFile "mainCounter.json" meta
 @
 -}
 {-# LANGUAGE CPP #-}
@@ -194,7 +193,7 @@ traceSignal# maps period traceName signal =
       error $ "Already tracing a signal with the name: '" ++ traceName ++ "'."
     else
       (
-        ( Map.insert traceName (typeName @a) signals
+        ( Map.insert ("logic." <> traceName) (typeName @a) signals
         , addTypes @a types
         , Map.insert
             traceName

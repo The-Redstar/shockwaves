@@ -118,9 +118,11 @@ library
     Shockwaves.Internal.Waveform
     Shockwaves.Internal.Binary
     Shockwaves.Internal.Render
-    Shockwaves.Internal.JSON
     Shockwaves.Style
     Shockwaves.Trace
+    Shockwaves.Waveform
+    Shockwaves.LUT
+    Shockwaves
     -- Shockwaves
     -- Shockwaves.Viewer
     -- Shockwaves.Color

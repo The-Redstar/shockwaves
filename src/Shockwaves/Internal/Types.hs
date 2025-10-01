@@ -4,13 +4,13 @@
 
 module Shockwaves.Internal.Types where
 import Clash.Prelude hiding (sub)
-import Shockwaves.Style (Color)
 import Data.Map as M
 import Data.Data (Typeable)
 
 import Data.Aeson hiding (Value)
 import Data.Colour.SRGB (RGB(..))
-import Control.DeepSeq (NFData)
+import Data.Word (Word8)
+import Control.DeepSeq (NFData (rnf))
 
 -- some type aliases for clarity
 type TypeName = String -- name of a type
@@ -27,14 +27,16 @@ type TypeMap = Map TypeName WaveformMeta -- map of type metainformation
 type LUTMap = Map LUTName LUT -- table of all luts
 type LUT = Map BinRep Translation -- single lut
 
-
+type Color = RGB Word8
 
 -- Translations
 data Translation = Translation (Maybe (Value,WaveStyle,Prec)) [(SubSignal,Translation)] deriving (Show,Generic,ToJSON,NFData)
-data WaveStyle = WSNormal | WSWarn | WSError | WSColor Color deriving (Show, Generic, NFData)
+data WaveStyle = WSNormal | WSWarn | WSError | WSColor Color deriving (Show, Generic)
+instance NFData WaveStyle where
+  rnf !_ = ()
 
-deriving instance Generic Color -- TODO: move back to custom color class? would be a shame
-deriving instance NFData Color
+-- deriving instance Generic Color -- TODO: move back to custom color class? would be a shame
+-- deriving instance NFData Color
 
 
 data NumberFormat = NFDec | NFHex | NFOct | NFBin deriving (Show, Typeable, Generic, NFData)

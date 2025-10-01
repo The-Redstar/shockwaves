@@ -38,6 +38,7 @@ import Data.Functor.Identity(Identity)
 import Control.Exception (SomeException, evaluate, catch)
 import GHC.IO (unsafeDupablePerformIO)
 import Control.DeepSeq (force, NFData)
+import Numeric (showInt, showHex, showOct, showBin)
 
 
 
@@ -69,7 +70,7 @@ instance (KnownSymbol s) => QuickSymbol s
 
 
 typeNameP :: Typeable a => Proxy a -> TypeName
-typeNameP p = show (typeRepFingerprint r) <> ":" <> show r --TODO: fix it so it includes the full path
+typeNameP p = show (typeRepFingerprint r) <> ":" <> show r
   where r = typeRep p
 
 errMsg :: Maybe Value -> Value
@@ -201,7 +202,9 @@ instance WaveformG (D1 m1 V1 k) where
 
 -- single constructor
 instance (WaveformG (C1 m2 s k), WaveformG (s k)) => WaveformG (D1 m1 (C1 m2 s) k) where
-  structureG' = L.map (\(n,_t,s) -> (n,s)) $ constructorsG @(C1 m2 s k)
+  structureG = s
+    where (_,_,s) = L.head $ constructorsG @(C1 m2 s k)
+  structureG' = undefined
   translatorG _ (sty:_) = wrapStyle sty $ translatorG @(C1 m2 s k) undefined undefined
   translatorG _ [] = undefined
   splitG M1{unM1=M1{unM1=x}} = enumLabel $ splitG x
@@ -242,7 +245,7 @@ enumLabel = L.zipWith enumLabel' [(0::Integer)..]
 
 -- struct
 instance (WaveformG (fields k), KnownSymbol name) => WaveformG (C1 (MetaCons name fix True) fields k) where
-  structureG' = [(symbolVal (Proxy @name), Structure $ enumLabel $ structureG' @(fields k))]
+  structureG' = [(symbolVal (Proxy @name), structureG @(fields k))]
   translatorG _ _ = Translator (widthG @(fields k)) $ TProduct
     { start  = sym @name <> "{"
     , sep    = ", "
@@ -250,11 +253,11 @@ instance (WaveformG (fields k), KnownSymbol name) => WaveformG (C1 (MetaCons nam
     , preci  = 0
     , preco  = 11
     , labels = L.map (Just . (<> " = ") . fst) (fieldsG @(fields k))
-    , subs   = enumLabel $ fieldsG @(fields k)
+    , subs   = fieldsG @(fields k)
     }
   splitG M1{unM1=x} =  [(sym @name, translation)]
     where
-      subs = enumLabel $ splitG x
+      subs = splitG x
       ren = render (translatorG @(C1 (MetaCons name fix True) fields k) undefined undefined) subs
       translation = Translation ren $ filterSignals subs
   addTypesG = addTypesG @(fields k)
@@ -264,7 +267,7 @@ instance (WaveformG (fields k), KnownSymbol name) => WaveformG (C1 (MetaCons nam
   constructorsG = [
     ( sym @name
     , translatorG @(C1 (MetaCons name fix True) fields k) undefined undefined
-    , structureG @(C1 (MetaCons name fix True) fields k)
+    , structureG @(fields k)
     )]
 
 
@@ -287,7 +290,7 @@ instance (WaveformG (fields k), KnownSymbol name, PrecF fix) => WaveformG (C1 (M
       Translator (widthG @(fields k)) $ TProduct
       { start  = case fieldsG @(fields k) of
                   [] -> sname
-                  _  -> sname <> " " --TODO: only add space if no parameters
+                  _  -> sname <> " "
       , sep    = " "
       , stop   = ""
       , preci  = 10
@@ -313,7 +316,7 @@ instance (WaveformG (fields k), KnownSymbol name, PrecF fix) => WaveformG (C1 (M
   constructorsG = [
     ( sym @name
     , translatorG @(C1 (MetaCons name fix False) fields k) undefined undefined
-    , structureG @(C1 (MetaCons name fix False) fields k)
+    , Structure $ enumLabel $ structureG' @(fields k)
     )]
 
 
@@ -506,13 +509,34 @@ instance (WaveformConst a, BitPack a, Typeable a) => Waveform (WaveformForConst 
 
 newtype WaveformForNumber (b::Bool) (f::NumberFormat) a = WfNum a deriving (Generic,BitPack,Typeable)
 
-instance (BitPack a, Typeable a, Typeable s, Typeable f, KnownBool s, KnownNFormat f, Integral a) => Waveform (WaveformForNumber (s::Bool) (f::NumberFormat) a) where
+instance (
+    BitPack a
+  , Typeable a
+  , Typeable s
+  , Typeable f
+  , KnownBool s
+  , KnownNFormat f
+  , Integral a
+  ) => Waveform (WaveformForNumber (s::Bool) (f::NumberFormat) a) where
   typeName = typeNameP (Proxy @a)
   structure = Structure []
-  translator = Translator 0 $ TNumber{signed = boolVal (Proxy @s), format = formatVal (Proxy @f)}
-  translate' (WfNum x) = case formatVal $ Proxy @f of
-    NFDec -> Translation (Just (show $ toInteger x,WSNormal,11)) []
-    _ -> undefined -- TODO; other formats are per-bit
+  translator = Translator (width @(WaveformForNumber s f a)) $ TNumber{signed = boolVal (Proxy @s), format = formatVal (Proxy @f)}
+  translate' (WfNum x) = Translation (Just (v,WSNormal,11)) []
+    where
+      v = if boolVal (Proxy @s) then
+          (if x<0 then "-" else "") <> (case formatVal $ Proxy @f of
+            NFDec -> showInt a
+            NFHex -> showHex a
+            NFOct -> showOct a
+            NFBin -> showBin a) ""
+        else
+          (case formatVal $ Proxy @f of
+            NFDec -> showInt u
+            NFHex -> showHex u
+            NFOct -> showOct u
+            NFBin -> showBin u) ""
+      a = abs x
+      u = toInteger x `rem` (width @(WaveformForNumber s f a))
   addSubtypes = id
   addValue _ = id
   hasLUT = False
@@ -624,7 +648,7 @@ instance (BitPack Char) => WaveformLUT Char where
   precL _ = 11
 deriving via WaveformForLUT Char instance (BitPack Char) => Waveform Char
 
-instance WaveformLUT Bit where 
+instance WaveformLUT Bit where
   structureL = Structure []
   splitL _ = []
   precL _ = 11
