@@ -39,6 +39,7 @@ import Control.Exception (SomeException, evaluate, catch)
 import GHC.IO (unsafeDupablePerformIO)
 import Control.DeepSeq (force, NFData)
 import Numeric (showInt, showHex, showOct, showBin)
+import Data.Maybe (fromMaybe)
 
 
 
@@ -126,7 +127,7 @@ class (BitPack a, Typeable a) => Waveform a where
 
   translate' :: a -> Translation
   default translate' :: (Generic a, WaveformG (Rep a ())) => a -> Translation
-  translate' x = safeTranslate (render $ translator @a) $ splitG (from x :: Rep a ())
+  translate' x = safeTranslate (render $ translator @a) $ splitG Nothing (from x :: Rep a ())
 
   addTypes :: TypeMap -> TypeMap
   addTypes tm = if M.member self tm then
@@ -175,7 +176,7 @@ class WaveformG a where
   structureG = Structure $ structureG' @a
   structureG' :: [(SubSignal,Structure)]
   translatorG :: Integer -> [WaveStyle] -> Translator
-  splitG :: a -> [(SubSignal,Translation)]
+  splitG :: Maybe Render -> a -> [(SubSignal,Translation)]
   addTypesG :: TypeMap -> TypeMap
   addValueG :: a -> LUTMap -> LUTMap
   hasLUTG :: Bool
@@ -194,7 +195,7 @@ class WaveformG a where
 instance WaveformG (D1 m1 V1 k) where
   structureG' = []
   translatorG _ _ = Translator 0 $ TConst $ Translation Nothing []
-  splitG _ = []
+  splitG _ _ = []
   addTypesG = id
   addValueG _ = id
   hasLUTG = False
@@ -207,7 +208,7 @@ instance (WaveformG (C1 m2 s k), WaveformG (s k)) => WaveformG (D1 m1 (C1 m2 s) 
   structureG' = undefined
   translatorG _ (sty:_) = wrapStyle sty $ translatorG @(C1 m2 s k) undefined undefined
   translatorG _ [] = undefined
-  splitG M1{unM1=M1{unM1=x}} = enumLabel $ splitG x
+  splitG r M1{unM1=M1{unM1=x}} = enumLabel $ splitG r x
   addTypesG = addTypesG @(C1 m2 s k)
   addValueG M1{unM1=x} = addValueG @(C1 m2 s k) x
   hasLUTG = hasLUTG @(C1 m2 s k)
@@ -218,7 +219,7 @@ instance (WaveformG (C1 m2 s k), WaveformG (s k)) => WaveformG (D1 m1 (C1 m2 s) 
 instance WaveformG ((a :+: b) k) => WaveformG (D1 m1 (a :+: b) k) where
   structureG' = structureG' @((a :+: b) k)
   translatorG w stys = Translator w $ TSum $ L.zipWith (\sty (n,t,_s) ->(Just n,wrapStyle sty t)) stys $ constructorsG @((a :+: b) k)
-  splitG M1{unM1=x} = splitG x
+  splitG r M1{unM1=x} = splitG r x
   addTypesG = addTypesG @((a :+: b) k)
   addValueG M1{unM1=x} = addValueG x
   hasLUTG = hasLUTG @((a :+: b) k)
@@ -227,8 +228,8 @@ instance WaveformG ((a :+: b) k) => WaveformG (D1 m1 (a :+: b) k) where
 instance (WaveformG (a k), WaveformG (b k)) => WaveformG ((a :+: b) k) where
   structureG' = structureG' @(a k) <> structureG' @(b k)
   translatorG = undefined
-  splitG (L1 x) = splitG x
-  splitG (R1 y) = splitG y
+  splitG r (L1 x) = splitG r x
+  splitG r (R1 y) = splitG r y
   addTypesG = addTypesG @(a k) . addTypesG @(b k)
   addValueG (L1 x) = addValueG x
   addValueG (R1 y) = addValueG y
@@ -255,10 +256,11 @@ instance (WaveformG (fields k), KnownSymbol name) => WaveformG (C1 (MetaCons nam
     , labels = L.map (Just . (<> " = ") . fst) (fieldsG @(fields k))
     , subs   = fieldsG @(fields k)
     }
-  splitG M1{unM1=x} =  [(sym @name, translation)]
+  splitG r M1{unM1=x} =  [(sym @name, translation)]
     where
-      subs = splitG x
-      ren = render (translatorG @(C1 (MetaCons name fix True) fields k) undefined undefined) subs
+      subs = splitG r x
+      ren = fromMaybe ren' r
+      ren' = render (translatorG @(C1 (MetaCons name fix True) fields k) undefined undefined) subs
       translation = Translation ren $ filterSignals subs
   addTypesG = addTypesG @(fields k)
   addValueG M1{unM1=x} = addValueG x
@@ -304,10 +306,11 @@ instance (WaveformG (fields k), KnownSymbol name, PrecF fix) => WaveformG (C1 (M
       sname = safeName (sym @name)
       isOperator = not (isAlpha . L.head $ sym @name) && (L.length (fieldsG @(fields k)) == 2)
 
-  splitG M1{unM1=x} = [(sym @name, translation)]
+  splitG r M1{unM1=x} = [(sym @name, translation)]
     where
-      subs = enumLabel $ splitG x
-      ren = render (translatorG @(C1 (MetaCons name fix False) fields k) undefined undefined) subs
+      subs = enumLabel $ splitG r x
+      ren = fromMaybe ren' r
+      ren' = render (translatorG @(C1 (MetaCons name fix False) fields k) undefined undefined) subs
       translation = Translation ren $ filterSignals subs
   addTypesG = addTypesG @(fields k)
   addValueG M1{unM1=x} = addValueG @(fields k) x
@@ -324,7 +327,7 @@ instance (WaveformG (fields k), KnownSymbol name, PrecF fix) => WaveformG (C1 (M
 instance WaveformG (U1 k) where
   structureG' = []
   translatorG = undefined
-  splitG _ = []
+  splitG _ _ = []
   addTypesG = id
   addValueG _ = id
   hasLUTG = False
@@ -336,7 +339,7 @@ instance WaveformG (U1 k) where
 instance (WaveformG (a k), WaveformG (b k)) => WaveformG ((a :*: b) k) where
   structureG' = structureG' @(a k) <> structureG' @(b k)
   translatorG = undefined
-  splitG (x :*: y) = splitG x <> splitG y
+  splitG r (x :*: y) = splitG r x <> splitG r y
   addTypesG = addTypesG @(a k) . addTypesG @(b k)
   addValueG (x :*: y) = addValueG x . addValueG y
   hasLUTG = hasLUTG @(a k) || hasLUTG @(b k)
@@ -348,7 +351,7 @@ instance (WaveformG (a k), WaveformG (b k)) => WaveformG ((a :*: b) k) where
 instance (Waveform t, KnownSymbol name) => WaveformG (S1 (MetaSel (Just name) p q r) (Rec0 t) k) where
   structureG' = [(sym @name, structure @t)]
   translatorG _ = undefined
-  splitG M1{unM1=K1{unK1=x}} = [(sym @name, translate x)]
+  splitG _r M1{unM1=K1{unK1=x}} = [(sym @name, translate x)]
   addTypesG = addTypes @t
   addValueG M1{unM1=K1{unK1=x}} = addValue @t x
   hasLUTG = hasLUT @t
@@ -360,7 +363,7 @@ instance (Waveform t, KnownSymbol name) => WaveformG (S1 (MetaSel (Just name) p 
 instance (Waveform t) => WaveformG (S1 (MetaSel Nothing p q r) (Rec0 t) k) where
   structureG' = [("", structure @t)]
   translatorG _ = undefined
-  splitG M1{unM1=K1{unK1=x}} = [("", translate x)]
+  splitG _r M1{unM1=K1{unK1=x}} = [("", translate x)]
   addTypesG = addTypes @t
   addValueG M1{unM1=K1{unK1=x}} = addValue @t x
   hasLUTG = hasLUT @t
@@ -387,12 +390,13 @@ class (Typeable a, BitPack a) => WaveformLUT a where
 
   translateL :: a -> Translation
   translateL x = Translation
-    (safeValOrMsg renError $ displayL x)
-    (safeValOrMsg (const []) $ splitL x)
+    ren
+    (safeValOrMsg (const []) $ splitL ren x)
+    where ren = safeValOrMsg renError $ displayL x
 
-  splitL :: a -> [(SubSignal,Translation)]
-  default splitL :: (Generic a, WaveformG (Rep a ())) => a -> [(SubSignal,Translation)]
-  splitL x = splitG (from x :: Rep a ())
+  splitL :: Render -> a -> [(SubSignal,Translation)]
+  default splitL :: (Generic a, WaveformG (Rep a ())) => Render -> a -> [(SubSignal,Translation)]
+  splitL r x = splitG (Just r) (from x :: Rep a ())
 
   displayL :: a -> Render
   displayL x = Just (labelL x, styleL x, precL x)
@@ -644,25 +648,25 @@ instance (Waveform a, Waveform b) => Waveform (Either a b)
 
 instance (BitPack Char) => WaveformLUT Char where
   structureL = Structure []
-  splitL _ = []
+  splitL _ _ = []
   precL _ = 11
 deriving via WaveformForLUT Char instance (BitPack Char) => Waveform Char
 
 instance WaveformLUT Bit where
   structureL = Structure []
-  splitL _ = []
+  splitL _ _ = []
   precL _ = 11
 deriving via WaveformForLUT Bit instance Waveform Bit
 
 instance WaveformLUT Double where
   structureL = Structure []
-  splitL _ = []
+  splitL _ _ = []
   precL _ = 11
 deriving via WaveformForLUT Double instance Waveform Double
 
 instance WaveformLUT Float where
   structureL = Structure []
-  splitL _ = []
+  splitL _ _ = []
   precL _ = 11
 deriving via WaveformForLUT Float instance Waveform Float
 
@@ -746,7 +750,7 @@ deriving via WaveformForNumber False NFBin (BitVector n) instance (KnownNat n) =
 
 instance (BitPack (Fixed r i f), KnownNat i, KnownNat f, Show (Fixed r i f), Typeable r) => WaveformLUT (Fixed r i f) where
   structureL = Structure []
-  splitL _ = []
+  splitL _ _ = []
   precL _ = 11
 deriving via WaveformForLUT (Fixed r i f)
   instance (BitPack (Fixed r i f), KnownNat i, KnownNat f, Show (Fixed r i f), Typeable r) => Waveform (Fixed r i f)
