@@ -1,27 +1,12 @@
 cabal-version:       2.4
 name:                shockwaves
-version:             1.0.1
+version:             2.0.1
 license:             BSD-2-Clause
 author:              Marijn Adriaanse <marijn@qbaylogic.com>
 maintainer:          Marijn Adriaanse <marijn@qbaylogic.com>
 
-flag left-err
-  description:
-    Display the `Left` variant of `Either` as an `VKWarn`.
-  default: False
-  manual: True
-
-flag nothing-dc
-  description:
-    Display the `Nothing` variant of `Maybe` as `VKDontCare`.
-  default: True
-  manual: True
-
-flag default-showx
-  description:
-    Change the default implementation of `Display` to use `ShowX` instead of `Show`.
-  default: False
-  manual: True
+Data-files:
+  prims/common/Clash_Shockwaves_Trace.primitives
 
 common common-options
   default-extensions:
@@ -102,6 +87,7 @@ common common-options
     deepseq,
     aeson,
     colour,
+    filepath,
 
     -- clash-prelude will set suitable version bounds for the plugins
     clash-prelude >= 1.8.2 && < 1.10,
@@ -112,32 +98,22 @@ common common-options
 
 library
   import: common-options
+  cpp-options: -DCABAL
   hs-source-dirs: src
   exposed-modules:
-    Shockwaves.Internal.Types
-    Shockwaves.Internal.Waveform
-    Shockwaves.Internal.Binary
-    Shockwaves.Internal.Render
-    Shockwaves.Style
-    Shockwaves.Trace
-    Shockwaves.Waveform
-    Shockwaves.LUT
-    Shockwaves
-    -- Shockwaves
-    -- Shockwaves.Viewer
-    -- Shockwaves.Color
-    -- Shockwaves.Trace
-    -- Shockwaves.PostTranslation
-    -- Shockwaves.JSON
---  other-modules:
+    Paths_shockwaves
+    Clash.Shockwaves
+    Clash.Shockwaves.Waveform
+    Clash.Shockwaves.LUT
+    Clash.Shockwaves.Style
+    Clash.Shockwaves.Style.Colors
+    Clash.Shockwaves.Trace
+    Clash.Shockwaves.Internal.Types
+    Clash.Shockwaves.Internal.Waveform
+    Clash.Shockwaves.Internal.Binary
+    Clash.Shockwaves.Internal.Render
+    Clash.Shockwaves.Internal.Util
   default-language: Haskell2010
-
-  if flag(left-err)
-    CPP-Options: -DLEFT_ERR
-  if flag(nothing-dc)
-    CPP-Options: -DNOTHING_DC
-  if flag(default-showx)
-    CPP-Options: -DDEFAULT_SHOWX
 
 -- Builds the executable 'clash', with shockwaves project in scope
 executable clash

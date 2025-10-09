@@ -6,12 +6,11 @@ Copyright  :  (C) 2018, Google Inc.
 License    :  BSD2 (see the file LICENSE)
 Maintainer :  QBayLogic B.V. <devops@qbaylogic.com>
 
-Utilities for tracing signals and dumping them in various ways. Example usage:
+Shockwaves utilities for tracing signals and dumping them in various ways. Example usage:
 
 @
 import Clash.Prelude hiding (writeFile)
 import Data.Text.IO  (writeFile)
-import Data.Aeson (encodeFile)
 
 -- | Count and wrap around
 subCounter :: SystemClockResetEnable => Signal System (Index 3)
@@ -44,8 +43,8 @@ main = do
     Left msg ->
       error msg
     Right (contents,meta) -> do
-      writeFile "mainCounter.vcd" contents
-      encodeFile "mainCounter.json" meta
+      writeFile     "mainCounter.vcd"  contents
+      writeFileJSON "mainCounter.json" meta
 @
 -}
 {-# LANGUAGE CPP #-}
@@ -58,7 +57,7 @@ main = do
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise       #-}
 
-module Shockwaves.Trace
+module Clash.Shockwaves.Trace
   (
   -- * Tracing functions
   -- ** Simple
@@ -128,7 +127,6 @@ import           GHC.Stack             (HasCallStack)
 import           GHC.TypeLits          (KnownNat, type (+))
 import           System.IO.Unsafe      (unsafePerformIO)
 import           Type.Reflection       (Typeable, TypeRep, typeRep)
-import           Data.Proxy
 
 import qualified Data.Aeson as Json
 import           Data.Aeson            ((.=))
@@ -137,8 +135,26 @@ import           Data.Aeson            ((.=))
 
 
 -- Shockwaves
-import           Shockwaves.Internal.Types hiding (Value)
-import           Shockwaves.Internal.Waveform
+import           Clash.Shockwaves.Internal.Types hiding (Value)
+import           Clash.Shockwaves.Internal.Waveform
+
+
+
+#ifdef CABAL
+import           Clash.Annotations.Primitive
+import           System.FilePath
+import qualified Paths_shockwaves
+import           System.IO.Unsafe
+
+{-# ANN module (Primitive [VHDL]          (unsafePerformIO Paths_shockwaves.getDataDir </> "prims" </> "common")) #-}
+{-# ANN module (Primitive [Verilog]       (unsafePerformIO Paths_shockwaves.getDataDir </> "prims" </> "common")) #-}
+{-# ANN module (Primitive [SystemVerilog] (unsafePerformIO Paths_shockwaves.getDataDir </> "prims" </> "common")) #-}
+#endif
+
+
+
+
+
 
 
 type Period   = Int
