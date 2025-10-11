@@ -1,7 +1,7 @@
 
 -- all you need for custom waveform implementations
 module Clash.Shockwaves.Waveform (
-  Waveform(structure,translator,translate',addSubtypes,addValue,hasLUT,styles),
+  Waveform(translator,translate',addSubtypes,addValue,hasLUT,styles),
   Translation(..),
   WaveStyle(..),
   Value,

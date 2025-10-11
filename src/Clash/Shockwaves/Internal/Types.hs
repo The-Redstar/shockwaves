@@ -35,7 +35,7 @@ type BinRep = String -- ^ Binary representation of a haskell value (like 'BitVec
 type LUTName = TypeName -- ^ Reference to a LUT.
 
 type SignalMap = Map SignalName TypeName -- ^ Map that links signal names to their types.
-type TypeMap = Map TypeName WaveformMeta -- ^ Map that links type names to their information.
+type TypeMap = Map TypeName Translator -- ^ Map that links type names to their information.
 type LUTMap = Map LUTName LUT -- ^ Table of LUTs. Usually, the index is a type name, but this is not necessarily the case.
 type LUT = Map BinRep Translation -- ^ A lookup table of 'Translation's.
 
@@ -62,42 +62,45 @@ instance NFData WaveStyle where
 
 -- | Different number formats.
 data NumberFormat
-  = NFDec -- ^ A decimal value.
+  = NFSig -- ^ A signed decimal value.
+  | NFUns -- ^ An unsigned decimal value.
   | NFHex -- ^ A hexadecimal value. TODO: Supports partially undefined values.
   | NFOct -- ^ An octal value. TODO: Supports partially undefined values.
   | NFBin -- ^ A binary value. TODO: Supports partially undefined values.
   deriving (Show, Typeable, Generic, NFData)
 
 -- | A structure value that shows what subsignals are present.
-newtype Structure = Structure [(SubSignal,Structure)] deriving (Show,Generic,ToJSON)
-
--- | Type information. This consists of the subsignal hierarchy, and the translator. These values must match.
-data WaveformMeta = Meta
-  { trans  :: Translator
-  , struct :: Structure
-  }
+newtype Structure
+  = Structure [(SubSignal,Structure)]
+  deriving (Show,Generic,ToJSON)
 
 -- | A translator. The translator has a width, indicating the number of bits it translates,
 -- as well as a 'TranslatorVariant' that determines the translation algorithm.
-data Translator = Translator Integer TranslatorVariant deriving (Show)
+data Translator = Translator Int TranslatorVariant deriving (Show)
 
 -- | The translation algorithm used.
 data TranslatorVariant
-  = TRef TypeName -- ^ Use the translator of a different type. Note that the width value of the 'Translator's should still match.
-  | TSum [(Maybe SubSignal, Translator)]
+  = TRef TypeName Structure
+  -- ^ Use the translator of a different type. Note that the width value of the 'Translator's should still match.
+  -- The structure is only used so that the structure can be reconstructed from the translator alone, and is not
+  -- actually stored in the final output.
+  | TSum [Translator]
   -- ^ Select one translator to be used based on the first bits of the binary representation. 
-  -- If the subsignal name is omitted, no actual subsignal will be shown for this translator.
+  -- Translate using the selected translator. Keep in mind that problem may occur if subsignal names are shared.
   | TProduct
-    { subs          :: [(SubSignal, Translator)] -- ^ List of fields to translate.
+    { subs          :: [(Maybe SubSignal, Translator)] -- ^ List of fields to translate.
     , start        :: Value -- ^ Text to insert at the start of the value.
     , sep          :: Value -- ^ Text to use to separate values.
     , stop         :: Value -- ^ Text to insert at the end of the value.
-    , labels       :: [Maybe Value]
+    , labels       :: [Value]
     -- ^ List of labels to insert before each value.
     -- If empty, insert no labels.
     -- Else, the length must match that of @subs@, and provided values are inserted.
     , preci        :: Prec -- ^ Inner precedence: used on subvalues.
     , preco        :: Prec -- ^ Outer precedence: used for the combined value.
+    , style        :: Int
+    -- ^ Select which field should be used to determine the style.
+    -- If no style is present in this field, or style is set to -1, use the default style instead.
     }
   -- ^ Split the binary data into separate fields, translate each of these, and join together the values.
   --
@@ -115,10 +118,9 @@ data TranslatorVariant
   --   }
   -- @
   | TConst Translation -- ^ A constant translation value. The binary value provided is completely ignored, even if not properly defined.
-  | TLut LUTName -- ^ A reference to a lookup table.
+  | TLut LUTName Structure -- ^ A reference to a lookup table.
   | TNumber
     { format :: NumberFormat -- ^ Format used to display data.
-    , signed :: Bool -- ^ Indicates whether the value should be interpreted as signed (two's complement) or not.
     }
   -- ^ A numerical value.
   | TArray
@@ -132,7 +134,7 @@ data TranslatorVariant
     }
   -- ^ An array value. This behaves much like 'TProduct', except that no labels are provided, and all fields use the same translator.
   | TStyled WaveStyle Translator -- ^ Apply a style to a translation. Does not change the structure.
-  | TMaybe Translator
+  | TDuplicate SubSignal Translator
   -- ^ Translate a value only if the first bit of the binary representation is @1@. If it is @0@, display nothing.
   -- TODO: Verify this is actually useful.
   deriving (Show)
@@ -146,7 +148,7 @@ instance IsString WaveStyle where
 instance ToJSON Translator where
   toJSON (Translator w v) = object ["w" .= w, "v" .= v']
     where v' = case v of
-                TRef n -> object ["R" .= n]
+                TRef n _ -> object ["R" .= n]
                 TSum subs -> object ["S" .= toJSON subs]
                 TProduct{subs,start,sep,stop,labels,preci,preco} -> object ["P" .= object
                   [ "t" .= toJSON subs
@@ -157,8 +159,8 @@ instance ToJSON Translator where
                   , "p" .= preci
                   , "P" .= preco]]
                 TConst t -> object ["C" .= toJSON t]
-                TLut lut -> object ["L" .= lut]
-                TNumber{format,signed} -> object ["N" .= object ["f" .= format, "s" .= signed]]
+                TLut lut s -> object ["L" .= [toJSON lut,toJSON s]]
+                TNumber{format} -> object ["N" .= object ["f" .= format]]
                 TArray{sub,len,start,sep,stop,preci,preco} -> object ["A" .= object 
                   [ "t" .= toJSON sub
                   , "l" .= len
@@ -168,9 +170,8 @@ instance ToJSON Translator where
                   , "p" .= preci
                   , "P" .= preco ]]
                 TStyled s t -> object ["X" .= [toJSON s,toJSON t]]
-                TMaybe t -> object ["M" .= toJSON t]
-instance ToJSON WaveformMeta where
-  toJSON Meta {trans,struct} = object ["t" .= trans, "s" .= struct]
+                TDuplicate n t -> object ["M" .= [toJSON n,toJSON t]]
+
 instance ToJSON WaveStyle where
   toJSON = \case
     WSNormal  -> "N"
@@ -179,7 +180,8 @@ instance ToJSON WaveStyle where
     WSColor (RGB r g b) -> object ["C" .= toJSON [r,g,b,255]]
 instance ToJSON NumberFormat where
   toJSON = \case
-    NFDec -> "D"
+    NFSig -> "S"
+    NFUns -> "U"
     NFHex -> "H"
     NFOct -> "O"
     NFBin -> "B"

@@ -136,7 +136,7 @@ import           Data.Aeson            ((.=))
 
 -- Shockwaves
 import           Clash.Shockwaves.Internal.Types hiding (Value)
-import           Clash.Shockwaves.Internal.Waveform
+import           Clash.Shockwaves.Internal.Waveform hiding (width)
 
 
 
@@ -215,14 +215,14 @@ traceSignal# maps period traceName signal =
             traceName
             ( encode (typeRep @a)
             , period
-            , width
+            , w
             , if hasLUT @a then map addValue $ sample signal else repeat id
             , mkTrace signal)
             traces
         )
       , signal)
  where
-  width = snatToNum (SNat @(BitSize a))
+  w = snatToNum (SNat @(BitSize a))
 -- See: https://github.com/clash-lang/clash-compiler/pull/2511
 {-# CLASH_OPAQUE traceSignal# #-}
 

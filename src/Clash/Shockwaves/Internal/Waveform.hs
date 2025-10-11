@@ -4,6 +4,7 @@
 {-# LANGUAGE DerivingVia #-}
 {-# OPTIONS_GHC -fconstraint-solver-iterations=10 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Clash.Shockwaves.Internal.Waveform where
 import Clash.Prelude
@@ -12,29 +13,29 @@ import Data.Proxy
 import Data.Typeable
 import Clash.Shockwaves.Internal.Types
 import Clash.Shockwaves.Internal.Binary
-import Clash.Shockwaves.Internal.Render
+import Clash.Shockwaves.Internal.Translator
 import Clash.Shockwaves.Internal.Util
 import Data.Map as M
 import qualified Data.List as L
 import Data.Char (isAlpha)
+import Data.Bifunctor (first)
 
 -- for standard type instances
 import Data.Int             (Int8,Int16,Int32,Int64)
 import Data.Word            (Word8,Word16,Word32,Word64)
 
--- import Clash.Num.Zeroing    (Zeroing, fromZeroing)
--- import Clash.Num.Wrapping   (Wrapping, fromWrapping)
--- import Clash.Num.Saturating (Saturating, fromSaturating)
--- import Clash.Num.Overflowing(Overflowing, fromOverflowing)
--- import Clash.Num.Erroring   (Erroring, fromErroring)
+import Clash.Num.Zeroing    (Zeroing, fromZeroing)
+import Clash.Num.Wrapping   (Wrapping, fromWrapping)
+import Clash.Num.Saturating (Saturating, fromSaturating)
+import Clash.Num.Overflowing(Overflowing, fromOverflowing)
+import Clash.Num.Erroring   (Erroring, fromErroring)
 import Data.Complex         (Complex)
 import Data.Ord             (Down)
 import Data.Functor.Identity(Identity)
-import Control.Exception (SomeException, evaluate, catch)
-import GHC.IO (unsafeDupablePerformIO)
-import Control.DeepSeq (force, NFData)
+import Control.DeepSeq (NFData)
 import Numeric (showInt, showHex, showOct, showBin)
-import Data.Maybe (fromMaybe)
+-- import Data.Maybe (fromMaybe)
+-- import Clash.Sized.Internal.BitVector (xToBV)
 
 
 
@@ -43,26 +44,13 @@ wrapStyle :: WaveStyle -> Translator -> Translator
 wrapStyle WSNormal t = t
 wrapStyle s (Translator w v) = Translator w $ TStyled s (Translator w v)
 
--- | Remove subsignal translators that do not have a subsignal name.
-filterSignals :: [(SubSignal,Translation)] -> [(SubSignal,Translation)]
-filterSignals = L.filter ((/="") . fst)
-
 
 -- | Create an error value from an optional error message.
 errMsg :: Maybe Value -> Value
 errMsg = maybe "undefined" (\e -> "{undefined:"<>e<>"}")
 
--- | Create a translation from an error message.
-transError :: Value -> Translation
-transError e = Translation (renError e) []
 
--- | Check if a value is safe to use.
--- If not, optionally return an error message.
-safeVal :: (NFData a) => a -> Either (Maybe Value) a
-safeVal x = unsafeDupablePerformIO (catch
-              ( evaluate . force $ unsafeDupablePerformIO (catch (evaluate . force $ Right x)
-                                         (\(_::SomeException) -> return $ Left Nothing)))
-              (\(XException e) -> return $ Left (Just e)))
+
 
 -- | Check if a value is safe.
 -- If not, create an error message and apply the provided function to it.
@@ -73,10 +61,10 @@ safeValOrMsg f x = case safeVal x of
 
 -- | Create a 'Translation' from a list of subsignals and a render function.
 -- Can handle undefined values in the subsignal list, as well as errors yielded by the render function.
-safeTranslate :: ([(SubSignal,Translation)] -> Render) -> [(SubSignal,Translation)] -> Translation
-safeTranslate renF subsL = case safeVal subsL of
-  Right subs -> case safeVal $ renF subs of
-    Right ren -> Translation ren $ filterSignals subs
+safeTranslate :: ([(SubSignal,Translation)] -> Translation) -> [(SubSignal,Translation)] -> Translation
+safeTranslate transF subsL = case safeVal subsL of
+  Right subs -> case safeVal $ transF subs of
+    Right t -> t
     Left e -> Translation (renError $ errMsg e) $ filterSignals subs
   Left e -> transError $ errMsg e
 
@@ -101,19 +89,6 @@ class (BitPack a, Typeable a) => Waveform a where
   typeName :: TypeName
   typeName = typeNameP (Proxy @a)
 
-  -- | The type metadata: its translator and structure.BinRep
-  -- Do not override.
-  meta :: WaveformMeta
-  meta = Meta
-    { trans = translator @a
-    , struct = structure @a
-    }
-
-  -- | The full subsignal hierarchy of the data type. Must match the translator value.
-  structure :: Structure
-  default structure :: (WaveformG (Rep a ())) => Structure
-  structure = structureG @(Rep a ())
-
   -- | The translator used for the data type. Must match the structure value.
   translator :: Translator
   default translator :: (WaveformG (Rep a ())) => Translator
@@ -130,14 +105,14 @@ class (BitPack a, Typeable a) => Waveform a where
   -- | Translation function that might error for undefined values.
   translate' :: a -> Translation
   default translate' :: (Generic a, WaveformG (Rep a ())) => a -> Translation
-  translate' x = safeTranslate (render $ translator @a) $ splitG Nothing (from x :: Rep a ())
+  translate' x = translateG (styles' @a) (from x :: Rep a ())
 
   -- | Register this type and all its subtypes. Do not override.
   addTypes :: TypeMap -> TypeMap
   addTypes tm = if M.member self tm then
                   tm
                 else
-                  addSubtypes @a $ M.insert self (meta @a) tm
+                  addSubtypes @a $ M.insert self (translator @a) tm
     where self = typeName @a
     --addSubtypes @a $ insertIfMissing (typeName (Proxy @a)) (meta @a) tm
 
@@ -162,7 +137,7 @@ class (BitPack a, Typeable a) => Waveform a where
   hasLUT = hasLUTG @(Rep a())
 
   -- | Runtime bitsize of the type.
-  width :: Integer
+  width :: Int
   width = bitsize (Proxy @a)
 
   -- | List of styles used for constructors.
@@ -190,205 +165,267 @@ class (BitPack a, Typeable a) => Waveform a where
 -- | A class for obtaining the required behaviour of 'Waveform' through "GHC.Generics".
 -- The exact details might change later; use at your own risk.
 class WaveformG a where
-  structureG :: Structure
-  structureG = Structure $ structureG' @a
-  structureG' :: [(SubSignal,Structure)]
-  translatorG :: Integer -> [WaveStyle] -> Translator
-  splitG :: Maybe Render -> a -> [(SubSignal,Translation)]
+  translateG :: [WaveStyle] -> a -> Translation
+  translatorG :: Int -> [WaveStyle] -> Translator
+
+  translateAsSumG :: [WaveStyle] -> a -> Translation
+  translateAsSumG = undefined
+
+  translateAllG :: a -> [(SubSignal,Translation)] -- for :*:
+  translatorsG :: [WaveStyle] -> [(SubSignal,Translator)] -- for :+:  and :*: but also used at a type level to get all field translators for defining tuples more easily
+
+  splitG :: Render -> a -> [(SubSignal,Translation)] -- used for LUTS. copy the render if there are multiple constructors
+
   addTypesG :: TypeMap -> TypeMap
   addValueG :: a -> LUTMap -> LUTMap
   hasLUTG :: Bool
 
-  widthG :: Integer
-  widthG = undefined
-
-  constructorsG :: [(SubSignal,Translator,Structure)]
-  constructorsG = undefined
-  fieldsG :: [(SubSignal,Translator)]
-  fieldsG = undefined
+  widthG :: Int -- for individual constructors
 
 
 
 -- void type
 instance WaveformG (D1 m1 V1 k) where
-  structureG' = []
+  translateG _ _ = Translation Nothing []
   translatorG _ _ = Translator 0 $ TConst $ Translation Nothing []
+
+  translateAllG = undefined
+  translatorsG = undefined
+
   splitG _ _ = []
+
   addTypesG = id
   addValueG _ = id
   hasLUTG = False
-  -- widthG = 0
 
--- single constructor
+  widthG = undefined
+
+-- single constructor type
 instance (WaveformG (C1 m2 s k), WaveformG (s k)) => WaveformG (D1 m1 (C1 m2 s) k) where
-  structureG = s
-    where (_,_,s) = L.head $ constructorsG @(C1 m2 s k)
-  structureG' = undefined
-  translatorG _ (sty:_) = wrapStyle sty $ translatorG @(C1 m2 s k) undefined undefined
-  translatorG _ [] = undefined
-  splitG r M1{unM1=M1{unM1=x}} = enumLabel $ splitG r x
+  translateG sty M1{unM1=x} = translateG sty x
+  translatorG = translatorG @(C1 m2 s k)
+
+  translateAllG M1{unM1=x} = translateAllG x -- these are used for tuple definitions, and generally making it easier to write 1-constructor Waveform implementations
+  translatorsG = translatorsG @(s k)
+
+  splitG _ M1{unM1=x} = translateAllG x
+
   addTypesG = addTypesG @(C1 m2 s k)
   addValueG M1{unM1=x} = addValueG @(C1 m2 s k) x
   hasLUTG = hasLUTG @(C1 m2 s k)
-  -- widthG = widthG @(C1 m2 s k)
+
+  widthG = undefined
 
 
--- multiple constructors
+-- multiple constructors type
 instance WaveformG ((a :+: b) k) => WaveformG (D1 m1 (a :+: b) k) where
-  structureG' = structureG' @((a :+: b) k)
-  translatorG w stys = Translator w $ TSum $ L.zipWith (\sty (n,t,_s) ->(Just n,wrapStyle sty t)) stys $ constructorsG @((a :+: b) k)
+  translateG sty M1{unM1=x} = translateAsSumG sty x
+  translatorG w sty = Translator w . TSum $ L.map snd $ translatorsG @((a :+: b) k) sty
+
+  translateAllG = undefined
+  translatorsG = undefined
+
   splitG r M1{unM1=x} = splitG r x
+
   addTypesG = addTypesG @((a :+: b) k)
   addValueG M1{unM1=x} = addValueG x
   hasLUTG = hasLUTG @((a :+: b) k)
-  -- widthG = (2log length constructorsG @((a :+: b) k)) + widthG @((a :+: b) k)
 
+  widthG = undefined
+
+-- multiple constructors
 instance (WaveformG (a k), WaveformG (b k)) => WaveformG ((a :+: b) k) where
-  structureG' = structureG' @(a k) <> structureG' @(b k)
+  translateG sty (L1 x) = translateG sty x
+  translateG sty (R1 y) = translateG (L.drop (L.length $ translatorsG @(a k) sty) sty) y
+  translateAsSumG sty (L1 x) = translateAsSumG sty x
+  translateAsSumG sty (R1 y) = translateAsSumG (L.drop (L.length $ translatorsG @(a k) sty) sty) y
+
+  translatorsG sty = translatorsG @(a k) sty <> translatorsG @(b k) (L.drop (L.length $ translatorsG @(a k) sty) sty)
+
   translatorG = undefined
+  translateAllG = undefined
+
   splitG r (L1 x) = splitG r x
   splitG r (R1 y) = splitG r y
+
   addTypesG = addTypesG @(a k) . addTypesG @(b k)
   addValueG (L1 x) = addValueG x
   addValueG (R1 y) = addValueG y
   hasLUTG = hasLUTG @(a k) || hasLUTG @(b k)
-  -- widthG = max (widthG @(a k)) (widthG @(b k))
 
-  constructorsG = constructorsG @(a k) <> constructorsG @(b k)
+  widthG = undefined
 
-enumLabel :: [(SubSignal,a)] -> [(SubSignal,a)]
-enumLabel = L.zipWith enumLabel' [(0::Integer)..]
-  where enumLabel' i t = case t of
-                            ("",x) -> (show i,x)
-                            x      -> x
 
--- struct
+-- struct constructor
 instance (WaveformG (fields k), KnownSymbol name) => WaveformG (C1 (MetaCons name fix True) fields k) where
-  structureG' = [(symbolVal (Proxy @name), structureG @(fields k))]
-  translatorG _ _ = Translator (widthG @(fields k)) $ TProduct
-    { start  = sym @name <> "{"
-    , sep    = ", "
-    , stop   = "}"
-    , preci  = 0
-    , preco  = 11
-    , labels = L.map (Just . (<> " = ") . fst) (fieldsG @(fields k))
-    , subs   = fieldsG @(fields k)
-    }
-  splitG r M1{unM1=x} =  [(sym @name, translation)]
+  translateG sty M1{unM1=x} = translateFromSubs
+    (translatorG @(C1 (MetaCons name fix True) fields k) undefined sty)
+    (translateAllG x)
+  translateAsSumG sty x = Translation ren [(sym @name, t)]
+    where t = translateG sty x
+          Translation ren _ = t
+  translatorG _ sty = t'
     where
-      subs = splitG r x
-      ren = fromMaybe ren' r
-      ren' = render (translatorG @(C1 (MetaCons name fix True) fields k) undefined undefined) subs
-      translation = Translation ren $ filterSignals subs
+      t' = wrapStyle (L.head sty) t
+      subs = translatorsG @(fields k) sty
+      t = Translator (widthG @(fields k)) $ TProduct
+        { start  = sym @name <> "{"
+        , sep    = ", "
+        , stop   = "}"
+        , preci  = 0
+        , preco  = 11
+        , labels = L.map fst subs
+        , subs   = L.map (first Just) subs
+        , style  = if L.length subs == 1 then 0 else -1
+        }
+
+  translateAllG = undefined
+  translatorsG sty = [(sym @name, translatorG @(C1 (MetaCons name fix True) fields k) undefined sty)]
+
+  splitG r M1{unM1=x} = [(sym @name, Translation r $ translateAllG x)]
+
   addTypesG = addTypesG @(fields k)
   addValueG M1{unM1=x} = addValueG x
   hasLUTG = hasLUTG @(fields k)
 
-  constructorsG = [
-    ( sym @name
-    , translatorG @(C1 (MetaCons name fix True) fields k) undefined undefined
-    , structureG @(fields k)
-    )]
+  widthG = undefined
 
 
+-- -- | Replace empty labels with numbers
+enumLabel :: [(SubSignal,a)] -> [(SubSignal,a)]
+enumLabel = L.zipWith (\i (_,t) -> (show i,t)) [(0::Integer)..]
 
 
 -- applicative product
 instance (WaveformG (fields k), KnownSymbol name, PrecF fix) => WaveformG (C1 (MetaCons name fix False) fields k) where
-  structureG' = [(sym @name, Structure $ enumLabel $ structureG' @(fields k))]
-  translatorG _ _ = if isOperator then
-      Translator (widthG @(fields k)) $ TProduct
-      { start  = ""
-      , sep    = " " <> sym @name <> " "
-      , stop   = ""
-      , preci  = precF @fix
-      , preco  = precF @fix
-      , labels = []
-      , subs = enumLabel $ fieldsG @(fields k)
-      }
-    else
-      Translator (widthG @(fields k)) $ TProduct
-      { start  = case fieldsG @(fields k) of
-                  [] -> sname
-                  _  -> sname <> " "
-      , sep    = " "
-      , stop   = ""
-      , preci  = 10
-      , preco  = case fieldsG @(fields k) of
-                  [] -> 11
-                  _  -> 10
-      , labels = []
-      , subs = enumLabel $ fieldsG @(fields k)
-      }
-    where
-      sname = safeName (sym @name)
-      isOperator = not (isAlpha . L.head $ sym @name) && (L.length (fieldsG @(fields k)) == 2)
+  translateG sty M1{unM1=x} = safeTranslateFromSubs
+    (translatorG @(C1 (MetaCons name fix True) fields k) undefined sty)
+    (enumLabel $ translateAllG x)
+  translateAsSumG sty x = Translation ren [(sym @name, t)]
+    where t = translateG sty x
+          Translation ren _ = t
 
-  splitG r M1{unM1=x} = [(sym @name, translation)]
+  translatorG _ sty = t'
     where
-      subs = enumLabel $ splitG r x
-      ren = fromMaybe ren' r
-      ren' = render (translatorG @(C1 (MetaCons name fix False) fields k) undefined undefined) subs
-      translation = Translation ren $ filterSignals subs
+      t' = wrapStyle (L.head sty) t
+      subs = enumLabel $ translatorsG @(fields k) sty
+      t = if isOperator then
+            Translator (widthG @(fields k)) $ TProduct
+              { start  = ""
+              , sep    = " " <> sym @name <> " "
+              , stop   = ""
+              , preci  = precF @fix
+              , preco  = precF @fix
+              , labels = []
+              , subs = L.map (first Just) subs
+              , style = -1
+              }
+          else
+            Translator (widthG @(fields k)) $ TProduct
+              { start  = case subs of
+                          [] -> sname
+                          _  -> sname <> " "
+              , sep    = " "
+              , stop   = ""
+              , preci  = 10
+              , preco  = case subs of
+                          [] -> 11
+                          _  -> 10
+              , labels = []
+              , subs = L.map (first Just) subs
+              , style = -1
+              }
+    
+      sname = safeName (sym @name)
+      isOperator = not (isAlpha . L.head $ sym @name) && (L.length subs == 2)
+
+  translateAllG = undefined
+  translatorsG sty = [(sym @name, translatorG @(C1 (MetaCons name fix True) fields k) undefined sty)]
+
+  splitG r M1{unM1=x} = [(sym @name, Translation r $ enumLabel $ translateAllG x)]
+
   addTypesG = addTypesG @(fields k)
-  addValueG M1{unM1=x} = addValueG @(fields k) x
+  addValueG M1{unM1=x} = addValueG x
   hasLUTG = hasLUTG @(fields k)
 
-  constructorsG = [
-    ( sym @name
-    , translatorG @(C1 (MetaCons name fix False) fields k) undefined undefined
-    , Structure $ enumLabel $ structureG' @(fields k)
-    )]
+  widthG = undefined
+
 
 
 -- no fields
 instance WaveformG (U1 k) where
-  structureG' = []
+  translateG = undefined
+  translateAsSumG = undefined
+  translateAllG _ = []
+
   translatorG = undefined
-  splitG _ _ = []
+  translatorsG _ = []
+
+  splitG = undefined
+
   addTypesG = id
   addValueG _ = id
   hasLUTG = False
 
-  fieldsG = []
   widthG = 0
+
+
 
 -- multiple fields
 instance (WaveformG (a k), WaveformG (b k)) => WaveformG ((a :*: b) k) where
-  structureG' = structureG' @(a k) <> structureG' @(b k)
+  translateG = undefined
+  translateAsSumG = undefined
+  translateAllG (x :*: y) = translateAllG x <> translateAllG y
+
   translatorG = undefined
-  splitG r (x :*: y) = splitG r x <> splitG r y
+  translatorsG sty = translatorsG @(a k) sty <> translatorsG @(b k) sty
+  
+  splitG = undefined
+
   addTypesG = addTypesG @(a k) . addTypesG @(b k)
   addValueG (x :*: y) = addValueG x . addValueG y
   hasLUTG = hasLUTG @(a k) || hasLUTG @(b k)
 
-  fieldsG = fieldsG @(a k) <> fieldsG @(b k)
   widthG = widthG @(a k) + widthG @(b k)
+
+-- | Generate a translator reference for a type
+ref :: Waveform a => Proxy a -> Translator
+ref (_::Proxy a) = Translator (width @a) $ TRef (typeName @a) (structure $ translator @a)
 
 -- struct field
 instance (Waveform t, KnownSymbol name) => WaveformG (S1 (MetaSel (Just name) p q r) (Rec0 t) k) where
-  structureG' = [(sym @name, structure @t)]
-  translatorG _ = undefined
-  splitG _r M1{unM1=K1{unK1=x}} = [(sym @name, translate x)]
+  translateG = undefined
+  translateAsSumG = undefined
+  translateAllG M1{unM1=K1{unK1=x}} = [(sym @name, translate x)]
+
+  translatorG = undefined
+  translatorsG _ = [(sym @name, ref (Proxy @t))]
+  
+  splitG = undefined
+
   addTypesG = addTypes @t
-  addValueG M1{unM1=K1{unK1=x}} = addValue @t x
+  addValueG M1{unM1=K1{unK1=x}} = addValue x
   hasLUTG = hasLUT @t
 
-  fieldsG = [(sym @name, Translator (width @t) $ TRef $ typeName @t)]
   widthG = width @t
+
 
 -- unnamed field
 instance (Waveform t) => WaveformG (S1 (MetaSel Nothing p q r) (Rec0 t) k) where
-  structureG' = [("", structure @t)]
-  translatorG _ = undefined
-  splitG _r M1{unM1=K1{unK1=x}} = [("", translate x)]
+  translateG = undefined
+  translateAsSumG = undefined
+  translateAllG M1{unM1=K1{unK1=x}} = [("", translate x)]
+
+  translatorG = undefined
+  translatorsG _ = [("", ref (Proxy @t))]
+  
+  splitG = undefined
+
   addTypesG = addTypes @t
-  addValueG M1{unM1=K1{unK1=x}} = addValue @t x
+  addValueG M1{unM1=K1{unK1=x}} = addValue x
   hasLUTG = hasLUT @t
 
-  fieldsG = [("", Translator (width @t) $ TRef $ typeName @t)]
   widthG = width @t
-
 
 
 
@@ -412,7 +449,7 @@ class (Typeable a, BitPack a) => WaveformLUT a where
   -- | Provides the hierarchy of subsignals.
   structureL :: Structure
   default structureL :: (WaveformG (Rep a ())) => Structure
-  structureL = structureG @(Rep a ())
+  structureL = structure $ translatorG @(Rep a ()) 0 (L.repeat WSNormal)
 
   -- | Translate a value. By default, this uses the 'displayL' and 'splitL' functions,
   -- and takes care of any error handling.
@@ -428,7 +465,7 @@ class (Typeable a, BitPack a) => WaveformLUT a where
   -- render can be reused for the subsignal of the constructor.
   splitL :: Render -> a -> [(SubSignal,Translation)]
   default splitL :: (Generic a, WaveformG (Rep a ())) => Render -> a -> [(SubSignal,Translation)]
-  splitL r x = splitG (Just r) (from x :: Rep a ())
+  splitL r x = splitG r (from x :: Rep a ())
 
   -- | Render a value. By default, this is split into the functions 'labelL', 'styleL' and 'precL'.
   displayL :: a -> Render
@@ -460,8 +497,7 @@ class (Typeable a, BitPack a) => WaveformLUT a where
 newtype WaveformForLUT a = WfLUT a deriving (Generic,BitPack,Typeable)
 
 instance (WaveformLUT a, BitPack a, Typeable a) => Waveform (WaveformForLUT a) where
-  structure = structureL @a
-  translator = Translator (width @(WaveformForLUT a)) $ TLut $ typeNameP (Proxy @a)
+  translator = Translator (width @(WaveformForLUT a)) $ TLut (typeNameP (Proxy @a)) (structureL @a)
   translate' (WfLUT x) = translateL x
 
   addSubtypes = id
@@ -474,14 +510,8 @@ instance (WaveformLUT a, BitPack a, Typeable a) => Waveform (WaveformForLUT a) w
 
   hasLUT = True
 
-  width :: Integer
-  width = bitsize (Proxy @a)
 
-  styles :: [WaveStyle]
-  styles = []
 
-  styles' :: [WaveStyle]
-  styles' = styles @(WaveformForLUT a) <> L.repeat WSNormal
 
 
 
@@ -548,7 +578,6 @@ newtype WaveformForConst a = WfConst a deriving (Generic,BitPack,Typeable)
 
 instance (WaveformConst a, BitPack a, Typeable a) => Waveform (WaveformForConst a) where
   typeName = typeNameP (Proxy @a)
-  structure = Structure []
   translator = Translator 0 $ TConst $ Translation (constTrans @a) []
   translate' _ = Translation (constTrans @a) []
   addSubtypes = id
@@ -562,55 +591,46 @@ instance (WaveformConst a, BitPack a, Typeable a) => Waveform (WaveformForConst 
 -- Options are provided at the type level (signed, format).
 --
 -- @
--- deriving via WaveformForNumber True NFDec (Signed 3) instance Waveform (Signed 3)
+-- deriving via WaveformForNumber NFSig (Signed 3) instance Waveform (Signed 3)
 -- @
-newtype WaveformForNumber (s::Bool) (f::NumberFormat) a = WfNum a deriving (Generic,BitPack,Typeable)
+newtype WaveformForNumber (f::NumberFormat) a = WfNum a deriving (Generic,BitPack,Typeable)
 
 instance (
     BitPack a
   , Typeable a
-  , Typeable s
   , Typeable f
-  , KnownBool s
   , KnownNFormat f
   , Integral a
-  ) => Waveform (WaveformForNumber (s::Bool) (f::NumberFormat) a) where
+  ) => Waveform (WaveformForNumber (f::NumberFormat) a) where
   typeName = typeNameP (Proxy @a)
-  structure = Structure []
-  translator = Translator (width @(WaveformForNumber s f a)) $ TNumber{signed = boolVal (Proxy @s), format = formatVal (Proxy @f)}
+  translator = Translator (width @(WaveformForNumber f a)) $ TNumber{format = formatVal (Proxy @f)}
   translate' (WfNum x) = Translation (Just (v,WSNormal,11)) []
     where
-      v = if boolVal (Proxy @s) then
-          (if x<0 then "-" else "") <> (case formatVal $ Proxy @f of
-            NFDec -> showInt a
-            NFHex -> showHex a
-            NFOct -> showOct a
-            NFBin -> showBin a) ""
-        else
-          (case formatVal $ Proxy @f of
-            NFDec -> showInt u
-            NFHex -> showHex u
-            NFOct -> showOct u
-            NFBin -> showBin u) ""
-      a = abs x
-      u = toInteger x `rem` (width @(WaveformForNumber s f a))
+      v = (case formatVal $ Proxy @f of
+            NFSig -> showInt x
+            NFUns -> showInt x -- TODO?
+            NFHex -> showHex x
+            NFOct -> showOct x
+            NFBin -> showBin x) ""
   addSubtypes = id
   addValue _ = id
   hasLUT = False
 
--- | Class for turning a type level 'Bool' into a runtime value.
-class KnownBool (b::Bool) where
-  boolVal :: forall proxy. proxy b -> Bool
-instance KnownBool True where
-  boolVal _ = True
-instance KnownBool False where
-  boolVal _ = False
+-- -- | Class for turning a type level 'Bool' into a runtime value.
+-- class KnownBool (b::Bool) where
+--   boolVal :: forall proxy. proxy b -> Bool
+-- instance KnownBool True where
+--   boolVal _ = True
+-- instance KnownBool False where
+--   boolVal _ = False
 
 -- | Class for turning a type level 'NumberFormat' into a runtime value.
 class KnownNFormat (f::NumberFormat) where
   formatVal :: forall proxy. proxy f -> NumberFormat
-instance KnownNFormat NFDec where
-  formatVal _ = NFDec
+instance KnownNFormat NFSig where
+  formatVal _ = NFSig
+instance KnownNFormat NFUns where
+  formatVal _ = NFUns
 instance KnownNFormat NFHex where
   formatVal _ = NFHex
 instance KnownNFormat NFOct where
@@ -628,54 +648,51 @@ for i in range(2,12):
 	v = [f"a{j}" for j in range(i)]
 	c = ",".join("Waveform "+k for k in v)
 	vs = ",".join(v)
-	st = ",".join(f"(\"{i}\",structure @{k})" for i,k in enumerate(v))
-	sb = ",".join(f"(\"{i}\",translator @{k})" for i,k in enumerate(v))
 	print(f"""instance ({c}) => Waveform ({vs}) where
-  structure = Structure [{st}]
-  translator = Translator (width @({vs})) $ TProduct{{start="(",sep=",",stop=")",labels=[],preci=0,preco=11,subs=[{sb}]}}
+  translator = Translator (width @({vs})) $ TProduct{{start="(",sep=",",stop=")",labels=[],preci=0,preco=11,style= -1,subs=L.map (first Just) $ translatorsG @(Rep ({vs}) ()) undefined}}
+  translate' x = translateFromSubs (translator @({vs})) $ translateAllG (from x::Rep ({vs}) ())
 """)
 -}
 
 instance (Waveform a0,Waveform a1) => Waveform (a0,a1) where
-  structure = Structure [("0",structure @a0),("1",structure @a1)]
-  translator = Translator (width @(a0,a1)) $ TProduct{start="(",sep=",",stop=")",labels=[],preci=0,preco=11,subs=[("0",translator @a0),("1",translator @a1)]}
+  translator = Translator (width @(a0,a1)) $ TProduct{start="(",sep=",",stop=")",labels=[],preci=0,preco=11,style= -1,subs=L.map (first Just) $ translatorsG @(Rep (a0,a1) ()) undefined}
+  translate' x = translateFromSubs (translator @(a0,a1)) $ translateAllG (from x::Rep (a0,a1) ())
 
 instance (Waveform a0,Waveform a1,Waveform a2) => Waveform (a0,a1,a2) where
-  structure = Structure [("0",structure @a0),("1",structure @a1),("2",structure @a2)]
-  translator = Translator (width @(a0,a1,a2)) $ TProduct{start="(",sep=",",stop=")",labels=[],preci=0,preco=11,subs=[("0",translator @a0),("1",translator @a1),("2",translator @a2)]}
+  translator = Translator (width @(a0,a1,a2)) $ TProduct{start="(",sep=",",stop=")",labels=[],preci=0,preco=11,style= -1,subs=L.map (first Just) $ translatorsG @(Rep (a0,a1,a2) ()) undefined}
+  translate' x = translateFromSubs (translator @(a0,a1,a2)) $ translateAllG (from x::Rep (a0,a1,a2) ())
 
 instance (Waveform a0,Waveform a1,Waveform a2,Waveform a3) => Waveform (a0,a1,a2,a3) where
-  structure = Structure [("0",structure @a0),("1",structure @a1),("2",structure @a2),("3",structure @a3)]
-  translator = Translator (width @(a0,a1,a2,a3)) $ TProduct{start="(",sep=",",stop=")",labels=[],preci=0,preco=11,subs=[("0",translator @a0),("1",translator @a1),("2",translator @a2),("3",translator @a3)]}
+  translator = Translator (width @(a0,a1,a2,a3)) $ TProduct{start="(",sep=",",stop=")",labels=[],preci=0,preco=11,style= -1,subs=L.map (first Just) $ translatorsG @(Rep (a0,a1,a2,a3) ()) undefined}
+  translate' x = translateFromSubs (translator @(a0,a1,a2,a3)) $ translateAllG (from x::Rep (a0,a1,a2,a3) ())
 
 instance (Waveform a0,Waveform a1,Waveform a2,Waveform a3,Waveform a4) => Waveform (a0,a1,a2,a3,a4) where
-  structure = Structure [("0",structure @a0),("1",structure @a1),("2",structure @a2),("3",structure @a3),("4",structure @a4)]
-  translator = Translator (width @(a0,a1,a2,a3,a4)) $ TProduct{start="(",sep=",",stop=")",labels=[],preci=0,preco=11,subs=[("0",translator @a0),("1",translator @a1),("2",translator @a2),("3",translator @a3),("4",translator @a4)]}
+  translator = Translator (width @(a0,a1,a2,a3,a4)) $ TProduct{start="(",sep=",",stop=")",labels=[],preci=0,preco=11,style= -1,subs=L.map (first Just) $ translatorsG @(Rep (a0,a1,a2,a3,a4) ()) undefined}
+  translate' x = translateFromSubs (translator @(a0,a1,a2,a3,a4)) $ translateAllG (from x::Rep (a0,a1,a2,a3,a4) ())
 
 instance (Waveform a0,Waveform a1,Waveform a2,Waveform a3,Waveform a4,Waveform a5) => Waveform (a0,a1,a2,a3,a4,a5) where
-  structure = Structure [("0",structure @a0),("1",structure @a1),("2",structure @a2),("3",structure @a3),("4",structure @a4),("5",structure @a5)]
-  translator = Translator (width @(a0,a1,a2,a3,a4,a5)) $ TProduct{start="(",sep=",",stop=")",labels=[],preci=0,preco=11,subs=[("0",translator @a0),("1",translator @a1),("2",translator @a2),("3",translator @a3),("4",translator @a4),("5",translator @a5)]}
+  translator = Translator (width @(a0,a1,a2,a3,a4,a5)) $ TProduct{start="(",sep=",",stop=")",labels=[],preci=0,preco=11,style= -1,subs=L.map (first Just) $ translatorsG @(Rep (a0,a1,a2,a3,a4,a5) ()) undefined}
+  translate' x = translateFromSubs (translator @(a0,a1,a2,a3,a4,a5)) $ translateAllG (from x::Rep (a0,a1,a2,a3,a4,a5) ())
 
 instance (Waveform a0,Waveform a1,Waveform a2,Waveform a3,Waveform a4,Waveform a5,Waveform a6) => Waveform (a0,a1,a2,a3,a4,a5,a6) where
-  structure = Structure [("0",structure @a0),("1",structure @a1),("2",structure @a2),("3",structure @a3),("4",structure @a4),("5",structure @a5),("6",structure @a6)]
-  translator = Translator (width @(a0,a1,a2,a3,a4,a5,a6)) $ TProduct{start="(",sep=",",stop=")",labels=[],preci=0,preco=11,subs=[("0",translator @a0),("1",translator @a1),("2",translator @a2),("3",translator @a3),("4",translator @a4),("5",translator @a5),("6",translator @a6)]}
+  translator = Translator (width @(a0,a1,a2,a3,a4,a5,a6)) $ TProduct{start="(",sep=",",stop=")",labels=[],preci=0,preco=11,style= -1,subs=L.map (first Just) $ translatorsG @(Rep (a0,a1,a2,a3,a4,a5,a6) ()) undefined}
+  translate' x = translateFromSubs (translator @(a0,a1,a2,a3,a4,a5,a6)) $ translateAllG (from x::Rep (a0,a1,a2,a3,a4,a5,a6) ())
 
 instance (Waveform a0,Waveform a1,Waveform a2,Waveform a3,Waveform a4,Waveform a5,Waveform a6,Waveform a7) => Waveform (a0,a1,a2,a3,a4,a5,a6,a7) where
-  structure = Structure [("0",structure @a0),("1",structure @a1),("2",structure @a2),("3",structure @a3),("4",structure @a4),("5",structure @a5),("6",structure @a6),("7",structure @a7)]
-  translator = Translator (width @(a0,a1,a2,a3,a4,a5,a6,a7)) $ TProduct{start="(",sep=",",stop=")",labels=[],preci=0,preco=11,subs=[("0",translator @a0),("1",translator @a1),("2",translator @a2),("3",translator @a3),("4",translator @a4),("5",translator @a5),("6",translator @a6),("7",translator @a7)]}
+  translator = Translator (width @(a0,a1,a2,a3,a4,a5,a6,a7)) $ TProduct{start="(",sep=",",stop=")",labels=[],preci=0,preco=11,style= -1,subs=L.map (first Just) $ translatorsG @(Rep (a0,a1,a2,a3,a4,a5,a6,a7) ()) undefined}
+  translate' x = translateFromSubs (translator @(a0,a1,a2,a3,a4,a5,a6,a7)) $ translateAllG (from x::Rep (a0,a1,a2,a3,a4,a5,a6,a7) ())
 
 instance (Waveform a0,Waveform a1,Waveform a2,Waveform a3,Waveform a4,Waveform a5,Waveform a6,Waveform a7,Waveform a8) => Waveform (a0,a1,a2,a3,a4,a5,a6,a7,a8) where
-  structure = Structure [("0",structure @a0),("1",structure @a1),("2",structure @a2),("3",structure @a3),("4",structure @a4),("5",structure @a5),("6",structure @a6),("7",structure @a7),("8",structure @a8)]
-  translator = Translator (width @(a0,a1,a2,a3,a4,a5,a6,a7,a8)) $ TProduct{start="(",sep=",",stop=")",labels=[],preci=0,preco=11,subs=[("0",translator @a0),("1",translator @a1),("2",translator @a2),("3",translator @a3),("4",translator @a4),("5",translator @a5),("6",translator @a6),("7",translator @a7),("8",translator @a8)]}
+  translator = Translator (width @(a0,a1,a2,a3,a4,a5,a6,a7,a8)) $ TProduct{start="(",sep=",",stop=")",labels=[],preci=0,preco=11,style= -1,subs=L.map (first Just) $ translatorsG @(Rep (a0,a1,a2,a3,a4,a5,a6,a7,a8) ()) undefined}
+  translate' x = translateFromSubs (translator @(a0,a1,a2,a3,a4,a5,a6,a7,a8)) $ translateAllG (from x::Rep (a0,a1,a2,a3,a4,a5,a6,a7,a8) ())
 
 instance (Waveform a0,Waveform a1,Waveform a2,Waveform a3,Waveform a4,Waveform a5,Waveform a6,Waveform a7,Waveform a8,Waveform a9) => Waveform (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9) where
-  structure = Structure [("0",structure @a0),("1",structure @a1),("2",structure @a2),("3",structure @a3),("4",structure @a4),("5",structure @a5),("6",structure @a6),("7",structure @a7),("8",structure @a8),("9",structure @a9)]
-  translator = Translator (width @(a0,a1,a2,a3,a4,a5,a6,a7,a8,a9)) $ TProduct{start="(",sep=",",stop=")",labels=[],preci=0,preco=11,subs=[("0",translator @a0),("1",translator @a1),("2",translator @a2),("3",translator @a3),("4",translator @a4),("5",translator @a5),("6",translator @a6),("7",translator @a7),("8",translator @a8),("9",translator @a9)]}
+  translator = Translator (width @(a0,a1,a2,a3,a4,a5,a6,a7,a8,a9)) $ TProduct{start="(",sep=",",stop=")",labels=[],preci=0,preco=11,style= -1,subs=L.map (first Just) $ translatorsG @(Rep (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9) ()) undefined}
+  translate' x = translateFromSubs (translator @(a0,a1,a2,a3,a4,a5,a6,a7,a8,a9)) $ translateAllG (from x::Rep (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9) ())
 
 instance (Waveform a0,Waveform a1,Waveform a2,Waveform a3,Waveform a4,Waveform a5,Waveform a6,Waveform a7,Waveform a8,Waveform a9,Waveform a10) => Waveform (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10) where
-  structure = Structure [("0",structure @a0),("1",structure @a1),("2",structure @a2),("3",structure @a3),("4",structure @a4),("5",structure @a5),("6",structure @a6),("7",structure @a7),("8",structure @a8),("9",structure @a9),("10",structure @a10)]
-  translator = Translator (width @(a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10)) $ TProduct{start="(",sep=",",stop=")",labels=[],preci=0,preco=11,subs=[("0",translator @a0),("1",translator @a1),("2",translator @a2),("3",translator @a3),("4",translator @a4),("5",translator @a5),("6",translator @a6),("7",translator @a7),("8",translator @a8),("9",translator @a9),("10",translator @a10)]}
-
+  translator = Translator (width @(a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10)) $ TProduct{start="(",sep=",",stop=")",labels=[],preci=0,preco=11,style= -1,subs=L.map (first Just) $ translatorsG @(Rep (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10) ()) undefined}
+  translate' x = translateFromSubs (translator @(a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10)) $ translateAllG (from x::Rep (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10) ())
 
 
 -- INSTANCES FOR OTHER STANDARD HASKELL TYPES
@@ -683,24 +700,35 @@ instance (Waveform a0,Waveform a1,Waveform a2,Waveform a3,Waveform a4,Waveform a
 instance WaveformConst () where
   constTrans = Just ("()",WSNormal,11)
 
-instance Waveform Bool where
-  structure = Structure []
-  translator = Translator 1 $ TSum
-    [ (Nothing,Translator 0 $ TConst $ Translation (Just ("False",WSNormal,11)) [])
-    , (Nothing,Translator 0 $ TConst $ Translation (Just ("True",WSNormal,11)) [])]
-  addSubtypes = id
-  addValue _ = id
+instance Waveform Bool
 
 instance (Waveform a) => Waveform (Maybe a) where
-  -- TODO: make maybe behave differently
-  -- structure = Structure [("Just.0",structure @a)]
-  -- translator = Translator (width @a +1) $ TSum [(Nothing,Translator 0 $ TConst $ Translation (Just ("Nothing",WSNormal,11)) []),(Just "Just.0",translator @a)]
-  -- translate x = Translation ren $ filterSignals subs
-  --   where
-  --     subs = case x of
-  --       Just y -> [("Just.0", ???)]
-  --       Nothing -> [("Nothing",Translation (Just ("Nothing",WSNormal,11)) [])]
-  --     ren = render (translator @a) subs
+  translator = Translator (width @(Maybe a)) $ TSum
+    [ Translator 0 $ TConst $ Translation (Just ("Nothing","grey",11)) []
+    , Translator (width @a) $ TProduct
+      { start = "Nothing "
+      , sep = ""
+      , stop = ""
+      , style = 0
+      , labels = []
+      , preci = 10
+      , preco = 10
+      , subs = [(Just "Just.0",ref (Proxy @a))]
+      }
+    ]
+  translate' Nothing = Translation (Just ("Nothing","grey",11)) []
+  translate' (Just x) = safeTranslateFromSubs t [("Just.0",translate x)]
+    where
+      t = Translator (width @a) $ TProduct
+        { start = "Nothing "
+        , sep = ""
+        , stop = ""
+        , style = 0
+        , labels = []
+        , preci = 10
+        , preco = 10
+        , subs = [(Just "Just.0",ref (Proxy @a))]
+        }
 
 instance (Waveform a, Waveform b) => Waveform (Either a b)
 
@@ -728,19 +756,19 @@ instance WaveformLUT Float where
   precL _ = 11
 deriving via WaveformForLUT Float instance Waveform Float
 
-deriving via WaveformForNumber True NFDec Int instance Waveform Int
-deriving via WaveformForNumber True NFDec Int8 instance Waveform Int8
-deriving via WaveformForNumber True NFDec Int16 instance Waveform Int16
-deriving via WaveformForNumber True NFDec Int32 instance Waveform Int32
-deriving via WaveformForNumber True NFDec Int64 instance Waveform Int64
+deriving via WaveformForNumber NFSig Int instance Waveform Int
+deriving via WaveformForNumber NFSig Int8 instance Waveform Int8
+deriving via WaveformForNumber NFSig Int16 instance Waveform Int16
+deriving via WaveformForNumber NFSig Int32 instance Waveform Int32
+deriving via WaveformForNumber NFSig Int64 instance Waveform Int64
 
 instance Waveform Ordering
 
-deriving via WaveformForNumber False NFDec Word instance Waveform Word
-deriving via WaveformForNumber False NFDec Word8 instance Waveform Word8
-deriving via WaveformForNumber False NFDec Word16 instance Waveform Word16
-deriving via WaveformForNumber False NFDec Word32 instance Waveform Word32
-deriving via WaveformForNumber False NFDec Word64 instance Waveform Word64
+deriving via WaveformForNumber NFUns Word instance Waveform Word
+deriving via WaveformForNumber NFUns Word8 instance Waveform Word8
+deriving via WaveformForNumber NFUns Word16 instance Waveform Word16
+deriving via WaveformForNumber NFUns Word32 instance Waveform Word32
+deriving via WaveformForNumber NFUns Word64 instance Waveform Word64
 
 -- instance Display CUShort where
 -- deriving via NoSplit CUShort instance Split CUShort
@@ -748,9 +776,9 @@ deriving via WaveformForNumber False NFDec Word64 instance Waveform Word64
 -- instance Display Half where
 -- deriving via NoSplit Half instance Split Half
 
-deriving via WaveformForNumber True NFDec (Signed n) instance (KnownNat n) => Waveform (Signed n)
-deriving via WaveformForNumber False NFDec (Unsigned n) instance (KnownNat n) =>  Waveform (Unsigned n)
-deriving via WaveformForNumber False NFDec (Index n) instance (1 <= n, KnownNat n) => Waveform (Index n)
+deriving via WaveformForNumber NFSig (Signed n) instance (KnownNat n) => Waveform (Signed n)
+deriving via WaveformForNumber NFUns (Unsigned n) instance (KnownNat n) =>  Waveform (Unsigned n)
+deriving via WaveformForNumber NFUns (Index n) instance (1 <= n, KnownNat n) => Waveform (Index n)
 
 instance Waveform a => Waveform (Complex a)
 
@@ -758,29 +786,68 @@ instance Waveform a => Waveform (Down a)
 
 instance Waveform a => Waveform (Identity a)
 
--- TODO: number variants
--- instance (Display a, Split a) => Split (Zeroing a) where
---     structure = VICompound [("0",structure @a)]
---     split z _ = [str "0" $ translate $ fromZeroing z]
 
--- instance (Display a, Split a) => Split (Wrapping a) where
---     structure = VICompound [("0",structure @a)]
---     split z _ = [str "0" $ translate $ fromWrapping z]
 
--- instance (Display a, Split a) => Split (Saturating a) where
---     structure = VICompound [("0",structure @a)]
---     split z _ = [str "0" $ translate $ fromSaturating z]
+-- number wrappers
+instance (Waveform a) => Waveform (Zeroing a) where
+  translator = Translator (width @a) $ TDuplicate "zeroing" $ ref (Proxy @a)
+  translate' z = Translation ren [("zeroing",t)]
+    where
+      t = translate (fromZeroing z)
+      Translation ren _ = t
+  addSubtypes = addTypes @a
+  addValue z = if hasLUT @a then addValue $ fromZeroing z
+               else id
+  hasLUT = hasLUT @a
 
--- instance (Display a, Split a) => Split (Overflowing a) where
---     structure = VICompound [("0",structure @a)]
---     split z _ = [str "0" $ translate $ fromOverflowing z]
+instance (Waveform a) => Waveform (Wrapping a) where
+  translator = Translator (width @a) $ TDuplicate "wrapping" $ ref (Proxy @a)
+  translate' z = Translation ren [("wrapping",t)]
+    where
+      t = translate (fromWrapping z)
+      Translation ren _ = t
+  addSubtypes = addTypes @a
+  addValue z = if hasLUT @a then addValue $ fromWrapping z
+               else id
+  hasLUT = hasLUT @a
 
--- instance (Display a, Split a) => Split (Erroring a) where
---     structure = VICompound [("0",structure @a)]
---     split z _ = [str "0" $ translate $ fromErroring z]
+instance (Waveform a) => Waveform (Saturating a) where
+  translator = Translator (width @a) $ TDuplicate "saturating" $ ref (Proxy @a)
+  translate' z = Translation ren [("saturating",t)]
+    where
+      t = translate (fromSaturating z)
+      Translation ren _ = t
+  addSubtypes = addTypes @a
+  addValue z = if hasLUT @a then addValue $ fromSaturating z
+               else id
+  hasLUT = hasLUT @a
+
+instance (Waveform a) => Waveform (Overflowing a) where
+  translator = Translator (width @a) $ TDuplicate "overflowing" $ ref (Proxy @a)
+  translate' z = Translation ren [("overflowing",t)]
+    where
+      t = translate (fromOverflowing z)
+      Translation ren _ = t
+  addSubtypes = addTypes @a
+  addValue z = if hasLUT @a then addValue $ fromOverflowing z
+               else id
+  hasLUT = hasLUT @a
+
+instance (Waveform a) => Waveform (Erroring a) where
+  translator = Translator (width @a) $ TDuplicate "erroring" $ ref (Proxy @a)
+  translate' z = Translation ren [("erroring",t)]
+    where
+      t = translate (fromErroring z)
+      Translation ren _ = t
+  addSubtypes = addTypes @a
+  addValue z = if hasLUT @a then addValue $ fromErroring z
+               else id
+  hasLUT = hasLUT @a
+
+
+-- vectors
 
 instance (KnownNat n, Waveform a) => Waveform (Vec n a) where
-  structure = Structure $ L.map (\i -> (show i, structure @a)) [0 .. natVal (Proxy @n) - 1]
   translator = Translator (width @(Vec n a)) $ if natVal (Proxy @n) /= 0 then
     TArray
       { start = ""
@@ -789,11 +856,11 @@ instance (KnownNat n, Waveform a) => Waveform (Vec n a) where
       , preci = 5
       , preco = 5
       , len = fromIntegral $ natVal (Proxy @n)
-      , sub = Translator (width @a) $ TRef $ typeName @a
+      , sub = ref (Proxy @a)
       }
     else
       TConst $ Translation (Just ("Nil",WSNormal,11)) []
-  translate' v = safeTranslate (render $ translator @(Vec n a)) $
+  translate' v = safeTranslate (translateFromSubs $ translator @(Vec n a)) $
     L.zipWith (\i x -> (show i,translate x)) [(0::Int)..] $ Clash.Prelude.toList v
 
   addSubtypes = addTypes @a
@@ -801,11 +868,9 @@ instance (KnownNat n, Waveform a) => Waveform (Vec n a) where
   hasLUT = hasLUT @a
 
 
+deriving via WaveformForNumber NFBin (BitVector n) instance (KnownNat n) => Waveform (BitVector n)
 
-deriving via WaveformForNumber False NFBin (BitVector n) instance (KnownNat n) => Waveform (BitVector n)
-
--- instance (Waveform a) => Waveform (Const a b)
-
+-- fixed point
 instance (BitPack (Fixed r i f), KnownNat i, KnownNat f, Show (Fixed r i f), Typeable r) => WaveformLUT (Fixed r i f) where
   structureL = Structure []
   splitL _ _ = []
@@ -813,16 +878,10 @@ instance (BitPack (Fixed r i f), KnownNat i, KnownNat f, Show (Fixed r i f), Typ
 deriving via WaveformForLUT (Fixed r i f)
   instance (BitPack (Fixed r i f), KnownNat i, KnownNat f, Show (Fixed r i f), Typeable r) => Waveform (Fixed r i f)
 
--- instance (Waveform (f a), Waveform (g a)) => Waveform (Product f g a)
--- instance (Waveform (f a), Waveform (g a)) => Waveform (Sum f g a)
--- instance (Waveform (f (g a)), Waveform (g a)) => Waveform (Compose f g a)
-
+-- snat
 instance (KnownNat n, BitPack (SNat n)) => WaveformConst (SNat n) where
   constTrans = Just (show $ natVal $ Proxy @n, WSNormal, 11)
 deriving via WaveformForConst (SNat n) instance (KnownNat n, BitPack (SNat n)) => Waveform (SNat n)
-
--- instance (BitPack (Proxy a), Typeable a) => Waveform (Proxy a)
-
 
 
 -- the monster that is RTree :/
@@ -831,11 +890,6 @@ type family RTreeIsLeaf d where
   RTreeIsLeaf d = False
 
 instance (Waveform a, KnownNat d, WaveformRTree (RTreeIsLeaf d) d a) => Waveform (RTree d a) where
-  structure = structureRTree (natVal $ Proxy @d) (structure @a)
-    where
-      structureRTree :: Integer -> Structure -> Structure
-      structureRTree d' sa = Structure $ if d'==0 then [("0",sa)] else [("left",tree'),("right",tree')]
-          where tree' = structureRTree (d'-1) sa
   translator = Translator (width @(RTree d a)) $ if natVal (Proxy @d) == 0 then
       TProduct
         { start = "BR "
@@ -844,7 +898,8 @@ instance (Waveform a, KnownNat d, WaveformRTree (RTreeIsLeaf d) d a) => Waveform
         , labels = []
         , preci = 10
         , preco = 10
-        , subs = [("0",Translator (width @a) $ TRef $ typeName @a)]
+        , subs = [(Just "0",ref (Proxy @a))]
+        , style = -1
         }
     else
       TProduct
@@ -854,9 +909,10 @@ instance (Waveform a, KnownNat d, WaveformRTree (RTreeIsLeaf d) d a) => Waveform
         , labels = []
         , preci = 0
         , preco = 11
-        , subs = [("left",tsub),("right",tsub)]
+        , subs = [(Just "left",tsub),(Just "right",tsub)]
+        , style = -1
         }
-    where tsub = Translator (width @(RTree d a)) $ TRef $ typeName @a
+    where tsub = ref (Proxy @a)
   translate' = translateRTree @(RTreeIsLeaf d) @d @a
   addSubtypes = addSubtypesRTree @(RTreeIsLeaf d) @d @a
   addValue = addValueRTree @(RTreeIsLeaf d) @d @a
@@ -873,7 +929,7 @@ instance (Waveform a) => WaveformRTree True 0 a where
       _ -> undefined
     else id
   addSubtypesRTree = addTypes @a
-  translateRTree t = safeTranslate (render (translator @(RTree 0 a))) subs--Translation ren subs
+  translateRTree t = safeTranslateFromSubs (translator @(RTree 0 a)) subs
     where
       subs = case t of
         RLeaf x -> [("0",translate x)]
@@ -885,9 +941,8 @@ instance (Waveform (RTree d1 a), Waveform a, d ~ d1 + 1, KnownNat d1) => Wavefor
       _ -> undefined
     else id
   addSubtypesRTree = addTypes @a
-  translateRTree t = Translation ren subs
+  translateRTree t = translateFromSubs (translator @(RTree 0 a)) subs
     where
       subs = case t of
         RBranch x y -> [("left",translate (x::RTree d1 a)),("right",translate y)]
         _ -> undefined
-      ren = render (translator @(RTree 0 a)) subs

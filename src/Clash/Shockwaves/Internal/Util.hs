@@ -10,7 +10,6 @@ module Clash.Shockwaves.Internal.Util where
 
 import Clash.Prelude
 import Clash.Shockwaves.Internal.Types
-import Clash.Shockwaves.Internal.Render (parenthesize)
 import qualified Data.List as L
 import Data.Aeson (encodeFile,ToJSON)
 import Data.Char (isAlpha)
@@ -18,11 +17,18 @@ import Data.Proxy
 import Data.Map (Map,member)
 import qualified Data.Map as M
 import Data.Typeable
+import Control.Exception (SomeException, evaluate, catch)
+import GHC.IO (unsafeDupablePerformIO)
+import Control.DeepSeq (force, NFData)
+
+-- | Wrap parentheses around a value.
+parenthesize :: Value -> Value
+parenthesize n = "("<>n<>")"
 
 
 -- | Returns the 'BitSize' of a type as a runtime 'Integer'.
-bitsize :: (BitPack a) => Proxy a -> Integer
-bitsize (_ :: Proxy a) = natVal $ Proxy @(BitSize a)
+bitsize :: (BitPack a) => Proxy a -> Int
+bitsize (_ :: Proxy a) = fromInteger $ natVal $ Proxy @(BitSize a)
 
 -- | Re-export of 'Data.Aeson.encodeFile' for cleaner naming in tracing functions.
 writeFileJSON :: forall a. ToJSON a => FilePath -> a -> IO ()
@@ -48,3 +54,11 @@ class (KnownSymbol s) => QuickSymbol s where
   sym :: String
   sym = symbolVal (Proxy @s)
 instance (KnownSymbol s) => QuickSymbol s
+
+-- | Check if a value is safe to use.
+-- If not, optionally return an error message.
+safeVal :: (NFData a) => a -> Either (Maybe Value) a
+safeVal x = unsafeDupablePerformIO (catch
+              ( evaluate . force $ unsafeDupablePerformIO (catch (evaluate . force $ Right x)
+                                         (\(_::SomeException) -> return $ Left Nothing)))
+              (\(XException e) -> return $ Left (Just e)))
