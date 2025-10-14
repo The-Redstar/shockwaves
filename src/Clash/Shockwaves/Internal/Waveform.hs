@@ -256,6 +256,9 @@ instance (WaveformG (a k), WaveformG (b k)) => WaveformG ((a :+: b) k) where
   widthG = undefined
 
 
+dup :: SubSignal -> Translator -> Translator
+dup name (Translator w t) = Translator w $ TDuplicate name (Translator w t)
+
 -- struct constructor
 instance (WaveformG (fields k), KnownSymbol name) => WaveformG (C1 (MetaCons name fix True) fields k) where
   translateG sty M1{unM1=x} = translateFromSubs
@@ -280,7 +283,7 @@ instance (WaveformG (fields k), KnownSymbol name) => WaveformG (C1 (MetaCons nam
         }
 
   translateAllG = undefined
-  translatorsG sty = [(sym @name, translatorG @(C1 (MetaCons name fix True) fields k) undefined sty)]
+  translatorsG sty = [(sym @name, dup (sym @name) $ translatorG @(C1 (MetaCons name fix True) fields k) undefined sty)]
 
   splitG r M1{unM1=x} = [(sym @name, Translation r $ translateAllG x)]
 
@@ -299,7 +302,7 @@ enumLabel = L.zipWith (\i (_,t) -> (show i,t)) [(0::Integer)..]
 -- applicative product
 instance (WaveformG (fields k), KnownSymbol name, PrecF fix) => WaveformG (C1 (MetaCons name fix False) fields k) where
   translateG sty M1{unM1=x} = safeTranslateFromSubs
-    (translatorG @(C1 (MetaCons name fix True) fields k) undefined sty)
+    (translatorG @(C1 (MetaCons name fix False) fields k) undefined sty)
     (enumLabel $ translateAllG x)
   translateAsSumG sty x = Translation ren [(sym @name, t)]
     where t = translateG sty x
@@ -340,7 +343,7 @@ instance (WaveformG (fields k), KnownSymbol name, PrecF fix) => WaveformG (C1 (M
       isOperator = not (isAlpha . L.head $ sym @name) && (L.length subs == 2)
 
   translateAllG = undefined
-  translatorsG sty = [(sym @name, translatorG @(C1 (MetaCons name fix True) fields k) undefined sty)]
+  translatorsG sty = [(sym @name, dup (sym @name) $ translatorG @(C1 (MetaCons name fix False) fields k) undefined sty)]
 
   splitG r M1{unM1=x} = [(sym @name, Translation r $ enumLabel $ translateAllG x)]
 
