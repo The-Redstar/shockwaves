@@ -538,6 +538,10 @@ instance (PrecG (a k), PrecG (b k)) => PrecG ((a :+: b) k) where
   precG (L1 x) = precG x
   precG (R1 y) = precG y
 
+-- struct
+instance (PrecG (fields k), PrecF fix) => PrecG (C1 (MetaCons name fix False) fields k) where
+  precG _ = 11
+
 instance (PrecG (fields k), PrecF fix) => PrecG (C1 (MetaCons name fix True) fields k) where
   precG _ = if nFields @(fields k) == 0 then 11 else precF @fix--prec $ fromSing $ sing @fix
 
@@ -547,13 +551,13 @@ instance PrecG (U1 k) where
   precG = undefined
   nFields = 0
 
--- instance (PrecG (a k), PrecG (b k)) => PrecG ((a :*: b) k) where
---   precG = undefined
---   nFields = nFields @(a k) + nFields @(b k)
+instance (PrecG (a k), PrecG (b k)) => PrecG ((a :*: b) k) where
+  precG = undefined
+  nFields = nFields @(a k) + nFields @(b k)
 
--- instance PrecG (S1 (MetaSel n p q r) t k) where
---   precG = undefined
---   nFields = 1
+instance PrecG (S1 (MetaSel n p q r) t k) where
+  precG = undefined
+  nFields = 1
 
 
 class PrecF (f::FixityI) where
