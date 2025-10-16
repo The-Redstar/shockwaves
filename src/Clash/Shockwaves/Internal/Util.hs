@@ -20,6 +20,7 @@ import Data.Typeable
 import Control.Exception (SomeException, evaluate, catch)
 import GHC.IO (unsafeDupablePerformIO)
 import Control.DeepSeq (force, NFData)
+import Control.Exception.Base (Exception(toException))
 
 -- | Wrap parentheses around a value.
 parenthesize :: Value -> Value
@@ -60,5 +61,5 @@ instance (KnownSymbol s) => QuickSymbol s
 safeVal :: (NFData a) => a -> Either (Maybe Value) a
 safeVal x = unsafeDupablePerformIO (catch
               ( evaluate . force $ unsafeDupablePerformIO (catch (evaluate . force $ Right x)
-                                         (\(_::SomeException) -> return $ Left Nothing)))
+                                         (\(e::SomeException) -> return $ Left (Just $ show $ toException e))))
               (\(XException e) -> return $ Left (Just e)))

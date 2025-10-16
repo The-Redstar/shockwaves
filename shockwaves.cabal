@@ -149,8 +149,9 @@ test-suite test-library
   type: exitcode-stdio-1.0
   ghc-options: -threaded
   main-is: tests.hs
---   other-modules:
-    -- Tests.Example.Project
+  other-modules:
+    Tests.Structure
+    Tests.Types
   build-depends:
     shockwaves,
     -- QuickCheck,

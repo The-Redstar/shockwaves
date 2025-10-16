@@ -34,6 +34,7 @@ import Data.Ord             (Down)
 import Data.Functor.Identity(Identity)
 import Control.DeepSeq (NFData)
 import Numeric (showInt, showHex, showOct, showBin)
+
 -- import Data.Maybe (fromMaybe)
 -- import Clash.Sized.Internal.BitVector (xToBV)
 
@@ -47,26 +48,24 @@ wrapStyle s (Translator w v) = Translator w $ TStyled s (Translator w v)
 
 -- | Create an error value from an optional error message.
 errMsg :: Maybe Value -> Value
-errMsg = maybe "undefined" (\e -> "{undefined:"<>e<>"}")
+errMsg = maybe "undefined" (\e -> "{undefinedmsg:"<>e<>"}")
 
 
 
+
+-- -- | Check if a value is safe.
+-- -- If not, create an error message and apply the provided function to it.
+-- safeValOrMsg :: (NFData a) => (Value -> a) -> a -> a
+-- safeValOrMsg f x = case safeVal x of
+--   Right x' -> x'
+--   Left e -> f $ errMsg e
 
 -- | Check if a value is safe.
--- If not, create an error message and apply the provided function to it.
-safeValOrMsg :: (NFData a) => (Value -> a) -> a -> a
-safeValOrMsg f x = case safeVal x of
+-- If not, return the default value provided.
+safeValOr :: (NFData a) => a -> a -> a
+safeValOr y x = case safeVal x of
   Right x' -> x'
-  Left e -> f $ errMsg e
-
--- | Create a 'Translation' from a list of subsignals and a render function.
--- Can handle undefined values in the subsignal list, as well as errors yielded by the render function.
-safeTranslate :: ([(SubSignal,Translation)] -> Translation) -> [(SubSignal,Translation)] -> Translation
-safeTranslate transF subsL = case safeVal subsL of
-  Right subs -> case safeVal $ transF subs of
-    Right t -> t
-    Left e -> Translation (renError $ errMsg e) $ filterSignals subs
-  Left e -> transError $ errMsg e
+  Left _e -> y
 
 ----------------------------------------------- WAVEFORM --------------------------------------
 
@@ -99,8 +98,9 @@ class (BitPack a, Typeable a) => Waveform a where
   translate :: a -> Translation
   translate x = case safeVal (translate' x) of
     Right t -> t
-    Left Nothing -> transError "undefined"
-    Left (Just e) -> transError ("{undefined: "<>e<>"}")
+    Left _ -> transError "undefined"
+    -- Left Nothing -> transError "{undefined}"
+    -- Left (Just e) -> transError ("{undefined: "<>e<>"}")
 
   -- | Translation function that might error for undefined values.
   translate' :: a -> Translation
@@ -165,26 +165,38 @@ class (BitPack a, Typeable a) => Waveform a where
 -- | A class for obtaining the required behaviour of 'Waveform' through "GHC.Generics".
 -- The exact details might change later; use at your own risk.
 class WaveformG a where
+  -- | Given a list of styles for the constructors, translate a value.
   translateG :: [WaveStyle] -> a -> Translation
+  -- | Given a bitsize and list of styles for the constructors, provide a translator.
   translatorG :: Int -> [WaveStyle] -> Translator
 
+  -- | Given a list of styles for the constructors, translate a value for a type with multiple constructors.
   translateAsSumG :: [WaveStyle] -> a -> Translation
   translateAsSumG = undefined
 
+  -- | Given a value, translate all fields.
   translateAllG :: a -> [(SubSignal,Translation)] -- for :*:
+  -- | Given one or more constructors and a list of styles, or one or more fields, give a list of translators.
+  -- For single constructor types, immediately return a list of field translators.
   translatorsG :: [WaveStyle] -> [(SubSignal,Translator)] -- for :+:  and :*: but also used at a type level to get all field translators for defining tuples more easily
 
+  -- | Given the render of the toplevel value and the value, create a list of subsignals.
+  -- This means that for types with multiple constructors, the render value is copied to a subsignal.
   splitG :: Render -> a -> [(SubSignal,Translation)] -- used for LUTS. copy the render if there are multiple constructors
 
+  -- | Add all subtypes to the type map, recusively.
   addTypesG :: TypeMap -> TypeMap
+  -- | Split a value into its subvalues and add them or their subvalues to a LUT if needed, recursively.
   addValueG :: a -> LUTMap -> LUTMap
+  -- | Return whether any of the subtypes makes use of a LUT.
   hasLUTG :: Bool
 
+  -- | Bitsize of a type. Only used to determine the width of constructors (and their fields).
   widthG :: Int -- for individual constructors
 
 
 
--- void type
+-- void type (assuming it has a csutom bitpack implementation)
 instance WaveformG (D1 m1 V1 k) where
   translateG _ _ = Translation Nothing []
   translatorG _ _ = Translator 0 $ TConst $ Translation Nothing []
@@ -202,13 +214,13 @@ instance WaveformG (D1 m1 V1 k) where
 
 -- single constructor type
 instance (WaveformG (C1 m2 s k), WaveformG (s k)) => WaveformG (D1 m1 (C1 m2 s) k) where
-  translateG sty M1{unM1=x} = translateG sty x
+  translateG sty = translateG sty . unM1
   translatorG = translatorG @(C1 m2 s k)
 
-  translateAllG M1{unM1=x} = translateAllG x -- these are used for tuple definitions, and generally making it easier to write 1-constructor Waveform implementations
+  translateAllG = translateAllG . unM1 -- these are used for tuple definitions, and generally making it easier to write 1-constructor Waveform implementations
   translatorsG = translatorsG @(s k)
 
-  splitG _ M1{unM1=x} = translateAllG x
+  splitG _ = translateAllG . unM1
 
   addTypesG = addTypesG @(C1 m2 s k)
   addValueG M1{unM1=x} = addValueG @(C1 m2 s k) x
@@ -219,13 +231,13 @@ instance (WaveformG (C1 m2 s k), WaveformG (s k)) => WaveformG (D1 m1 (C1 m2 s) 
 
 -- multiple constructors type
 instance WaveformG ((a :+: b) k) => WaveformG (D1 m1 (a :+: b) k) where
-  translateG sty M1{unM1=x} = translateAsSumG sty x
+  translateG sty = translateAsSumG sty . unM1
   translatorG w sty = Translator w . TSum $ L.map snd $ translatorsG @((a :+: b) k) sty
 
   translateAllG = undefined
   translatorsG = undefined
 
-  splitG r M1{unM1=x} = splitG r x
+  splitG r = splitG r . unM1
 
   addTypesG = addTypesG @((a :+: b) k)
   addValueG M1{unM1=x} = addValueG x
@@ -261,9 +273,9 @@ dup name (Translator w t) = Translator w $ TDuplicate name (Translator w t)
 
 -- struct constructor
 instance (WaveformG (fields k), KnownSymbol name) => WaveformG (C1 (MetaCons name fix True) fields k) where
-  translateG sty M1{unM1=x} = translateFromSubs
+  translateG sty x = translateFromSubs
     (translatorG @(C1 (MetaCons name fix True) fields k) undefined sty)
-    (translateAllG x)
+    (translateAllG $ unM1 x)
   translateAsSumG sty x = Translation ren [(sym @name, t)]
     where t = translateG sty x
           Translation ren _ = t
@@ -277,7 +289,7 @@ instance (WaveformG (fields k), KnownSymbol name) => WaveformG (C1 (MetaCons nam
         , stop   = "}"
         , preci  = 0
         , preco  = 11
-        , labels = L.map fst subs
+        , labels = L.map ((<>" = ") . fst) subs
         , subs   = L.map (first Just) subs
         , style  = if L.length subs == 1 then 0 else -1
         }
@@ -285,7 +297,7 @@ instance (WaveformG (fields k), KnownSymbol name) => WaveformG (C1 (MetaCons nam
   translateAllG = undefined
   translatorsG sty = [(sym @name, dup (sym @name) $ translatorG @(C1 (MetaCons name fix True) fields k) undefined sty)]
 
-  splitG r M1{unM1=x} = [(sym @name, Translation r $ translateAllG x)]
+  splitG r x = [(sym @name, Translation r $ translateAllG $ unM1 x)]
 
   addTypesG = addTypesG @(fields k)
   addValueG M1{unM1=x} = addValueG x
@@ -301,9 +313,9 @@ enumLabel = L.zipWith (\i (_,t) -> (show i,t)) [(0::Integer)..]
 
 -- applicative product
 instance (WaveformG (fields k), KnownSymbol name, PrecF fix) => WaveformG (C1 (MetaCons name fix False) fields k) where
-  translateG sty M1{unM1=x} = safeTranslateFromSubs
+  translateG sty x = safeTranslateFromSubs
     (translatorG @(C1 (MetaCons name fix False) fields k) undefined sty)
-    (enumLabel $ translateAllG x)
+    (enumLabel $ translateAllG $ unM1 x)
   translateAsSumG sty x = Translation ren [(sym @name, t)]
     where t = translateG sty x
           Translation ren _ = t
@@ -338,14 +350,14 @@ instance (WaveformG (fields k), KnownSymbol name, PrecF fix) => WaveformG (C1 (M
               , subs = L.map (first Just) subs
               , style = -1
               }
-    
+
       sname = safeName (sym @name)
       isOperator = not (isAlpha . L.head $ sym @name) && (L.length subs == 2)
 
   translateAllG = undefined
   translatorsG sty = [(sym @name, dup (sym @name) $ translatorG @(C1 (MetaCons name fix False) fields k) undefined sty)]
 
-  splitG r M1{unM1=x} = [(sym @name, Translation r $ enumLabel $ translateAllG x)]
+  splitG r x = [(sym @name, Translation r $ enumLabel $ translateAllG $ unM1 x)]
 
   addTypesG = addTypesG @(fields k)
   addValueG M1{unM1=x} = addValueG x
@@ -373,16 +385,21 @@ instance WaveformG (U1 k) where
   widthG = 0
 
 
+left :: (a :*: b) k -> a k
+left (x :*: _y) = x
+
+right :: (a :*: b) k -> b k
+right (_x :*: y) = y
 
 -- multiple fields
 instance (WaveformG (a k), WaveformG (b k)) => WaveformG ((a :*: b) k) where
   translateG = undefined
   translateAsSumG = undefined
-  translateAllG (x :*: y) = translateAllG x <> translateAllG y
+  translateAllG xy = translateAllG (left xy) <> translateAllG (right xy)
 
   translatorG = undefined
   translatorsG sty = translatorsG @(a k) sty <> translatorsG @(b k) sty
-  
+
   splitG = undefined
 
   addTypesG = addTypesG @(a k) . addTypesG @(b k)
@@ -399,11 +416,11 @@ ref (_::Proxy a) = Translator (width @a) $ TRef (typeName @a) (structure $ trans
 instance (Waveform t, KnownSymbol name) => WaveformG (S1 (MetaSel (Just name) p q r) (Rec0 t) k) where
   translateG = undefined
   translateAsSumG = undefined
-  translateAllG M1{unM1=K1{unK1=x}} = [(sym @name, translate x)]
+  translateAllG x = [(sym @name, translate $ unK1 . unM1 $ x)]
 
   translatorG = undefined
   translatorsG _ = [(sym @name, ref (Proxy @t))]
-  
+
   splitG = undefined
 
   addTypesG = addTypes @t
@@ -421,7 +438,7 @@ instance (Waveform t) => WaveformG (S1 (MetaSel Nothing p q r) (Rec0 t) k) where
 
   translatorG = undefined
   translatorsG _ = [("", ref (Proxy @t))]
-  
+
   splitG = undefined
 
   addTypesG = addTypes @t
@@ -457,10 +474,10 @@ class (Typeable a, BitPack a) => WaveformLUT a where
   -- | Translate a value. By default, this uses the 'displayL' and 'splitL' functions,
   -- and takes care of any error handling.
   translateL :: a -> Translation
-  translateL x = Translation
-    ren
-    (safeValOrMsg (const []) $ splitL ren x)
-    where ren = safeValOrMsg renError $ displayL x
+  translateL x = Translation ren subs
+    where
+      ren = safeValOr (renError "undefined") $ displayL x
+      subs = safeValOr [] $ splitL ren x
 
   -- | Create subsignal translations of a value from that value and its toplevel render.
   --
@@ -614,8 +631,8 @@ instance (
   translate' (WfNum x) = Translation (Just (v,WSNormal,11)) []
     where
       v = (case formatVal $ Proxy @f of
-            NFSig -> showInt x
-            NFUns -> showInt x -- TODO?
+            NFSig -> const $ show $ toInteger x
+            NFUns -> showInt x
             NFHex -> showHex x
             NFOct -> showOct x
             NFBin -> showBin x) ""
@@ -713,7 +730,7 @@ instance (Waveform a) => Waveform (Maybe a) where
   translator = Translator (width @(Maybe a)) $ TSum
     [ Translator 0 $ TConst $ Translation (Just ("Nothing","grey",11)) []
     , Translator (width @a) $ TProduct
-      { start = "Nothing "
+      { start = "Just "
       , sep = ""
       , stop = ""
       , style = 0
@@ -726,16 +743,10 @@ instance (Waveform a) => Waveform (Maybe a) where
   translate' Nothing = Translation (Just ("Nothing","grey",11)) []
   translate' (Just x) = safeTranslateFromSubs t [("Just.0",translate x)]
     where
-      t = Translator (width @a) $ TProduct
-        { start = "Nothing "
-        , sep = ""
-        , stop = ""
-        , style = 0
-        , labels = []
-        , preci = 10
-        , preco = 10
-        , subs = [(Just "Just.0",ref (Proxy @a))]
-        }
+      t = case translator @(Maybe a) of
+        Translator _ (TSum [_,t']) -> t'
+        _ -> undefined
+
 
 instance (Waveform a, Waveform b) => Waveform (Either a b)
 
@@ -867,8 +878,14 @@ instance (KnownNat n, Waveform a) => Waveform (Vec n a) where
       }
     else
       TConst $ Translation (Just ("Nil",WSNormal,11)) []
-  translate' v = safeTranslate (translateFromSubs $ translator @(Vec n a)) $
-    L.zipWith (\i x -> (show i,translate x)) [(0::Int)..] $ Clash.Prelude.toList v
+  translate' v = translateFromSubs (translator @(Vec n a)) $
+    L.zipWith (\i x -> (show i,translate x)) [(0::Int)..] $ go v
+    where
+      go :: forall (k::Natural). KnownNat k => Vec k a -> [a]
+      go (v'::Vec k a) = case isX v' of
+        Right Nil -> []
+        Right (x `Cons` v'') -> x : go v''
+        Left _e -> L.replicate (fromIntegral . natVal $ Proxy @k) (undefined::a)
 
   addSubtypes = addTypes @a
   addValue v = L.foldl (.) id $ L.map addValue $ Clash.Prelude.toList v

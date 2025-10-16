@@ -52,7 +52,7 @@ data WaveStyle
   | WSWarn -- ^ A warning value.
   | WSError -- ^ An error value. TODO: Errors are propagated by translators.
   | WSColor Color -- ^ A custom color. See "Clash.Shockwaves.Style" for more information.
-  deriving (Show, Generic)
+  deriving (Show, Generic, Eq)
 
 instance NFData WaveStyle where
   rnf !_ = ()
