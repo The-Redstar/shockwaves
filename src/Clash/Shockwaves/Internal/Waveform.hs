@@ -517,6 +517,8 @@ class (Typeable a, BitPack a) => WaveformLUT a where
 newtype WaveformForLUT a = WfLUT a deriving (Generic,BitPack,Typeable)
 
 instance (WaveformLUT a, BitPack a, Typeable a) => Waveform (WaveformForLUT a) where
+  typeName = typeNameP (Proxy @a)
+  
   translator = Translator (width @(WaveformForLUT a)) $ TLut (typeNameP (Proxy @a)) (structureL @a)
   translate' (WfLUT x) = translateL x
 

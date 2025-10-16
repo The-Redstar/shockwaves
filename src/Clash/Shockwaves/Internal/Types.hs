@@ -44,7 +44,7 @@ type Color = RGB Word8 -- ^ The color type used in 'WaveStyle'.
 -- | Translation of a value.BinRep
 -- The translation consists of a 'Render' value (the representation of the value itself)
 -- and a list of subsignal translations.
-data Translation = Translation (Maybe (Value,WaveStyle,Prec)) [(SubSignal,Translation)] deriving (Show,Generic,ToJSON,NFData)
+data Translation = Translation (Maybe (Value,WaveStyle,Prec)) [(SubSignal,Translation)] deriving (Show,Generic,ToJSON,NFData,Eq)
 
 -- | The style in which a signal should be displayed.
 data WaveStyle
