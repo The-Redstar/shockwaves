@@ -150,14 +150,15 @@ instance ToJSON Translator where
     where v' = case v of
                 TRef n _ -> object ["R" .= n]
                 TSum subs -> object ["S" .= toJSON subs]
-                TProduct{subs,start,sep,stop,labels,preci,preco} -> object ["P" .= object
+                TProduct{subs,start,sep,stop,labels,preci,preco,style} -> object ["P" .= object
                   [ "t" .= toJSON subs
                   , "[" .= start
                   , "," .= sep
                   , "]" .= stop
                   , "n" .= labels
                   , "p" .= preci
-                  , "P" .= preco]]
+                  , "P" .= preco
+                  , "s" .= style]]
                 TConst t -> object ["C" .= toJSON t]
                 TLut lut s -> object ["L" .= [toJSON lut,toJSON s]]
                 TNumber{format} -> object ["N" .= object ["f" .= format]]

@@ -11,7 +11,7 @@ module Clash.Shockwaves.Waveform (
   Translator(..),
   NumberFormat(..),
   WaveformForConst(..),
-  WaveformForNumber,
+  WaveformForNumber(..),
 ) where
 
 import Clash.Shockwaves.Internal.Types
