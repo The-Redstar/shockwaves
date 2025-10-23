@@ -131,17 +131,7 @@ executable clashi
     ghc-options: -dynamic
   build-depends: base, clash-ghc, shockwaves
 
--- test-suite doctests
---   type:             exitcode-stdio-1.0
---   default-language: Haskell2010
---   main-is:          doctests.hs
---   ghc-options:      -Wall -Wcompat -threaded
---   hs-source-dirs:   tests
---   build-depends:
---     base,
---     shockwaves,
---     doctest-parallel >= 0.2 && < 0.4,
-
+-- Run a bunch of tests about translators and translations
 test-suite test-library
   import: common-options
   default-language: Haskell2010
@@ -154,13 +144,11 @@ test-suite test-library
     Tests.Types
   build-depends:
     shockwaves,
-    -- QuickCheck,
-    -- clash-prelude-hedgehog,
-    -- hedgehog,
     tasty >= 1.2 && < 1.6,
     tasty-hunit,
     tasty-th
 
+-- Produce a VCD output of many different types to check in Surfer / use to test Surfer
 test-suite test-vcd
   import: common-options
   default-language: Haskell2010

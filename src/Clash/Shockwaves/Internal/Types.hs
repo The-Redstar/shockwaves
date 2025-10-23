@@ -171,7 +171,7 @@ instance ToJSON Translator where
                   , "p" .= preci
                   , "P" .= preco ]]
                 TStyled s t -> object ["X" .= [toJSON s,toJSON t]]
-                TDuplicate n t -> object ["M" .= [toJSON n,toJSON t]]
+                TDuplicate n t -> object ["D" .= [toJSON n,toJSON t]]
 
 instance ToJSON WaveStyle where
   toJSON = \case

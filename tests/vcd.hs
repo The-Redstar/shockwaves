@@ -35,34 +35,9 @@ tests =
   , test "Mix"$ values [A,B True,C False 1,D{x=True,y= -1},0 :**: (True ://: False),undef]
   , test "L"  $ values [La True False,Lb False True,undef]
   , test "Maybe" $ values [Nothing, Just True, undef]
-  , test "Vec 2" $ values [True :> False :> Nil, undef :> undef :> Nil, undef]
-  , test "Vec 0" $ values [Nil @Bool, undef]
+  , test "Vec2"  $ values [True :> False :> Nil, undef :> undef :> Nil, undef]
+  , test "Vec0"  $ values [Nil @Bool, undef]
   ]
-
-
---- string annotations
-
-data AnnotateCycles (c::[Symbol]) = AnnotateCycles Int deriving (BitPack,Generic,Typeable)
-                                                       deriving Waveform via (WaveformForLUT (AnnotateCycles c))
-getAnnotation :: (SymbolVals c) => AnnotateCycles c -> String
-getAnnotation (AnnotateCycles k :: AnnotateCycles c) = (symbolVals (Proxy @c) <> L.repeat "") L.!! k
-
-instance (SymbolVals c, Typeable c) => WaveformLUT (AnnotateCycles c) where
-  labelL a = getAnnotation a
-  precL _ = 10
-
-annotateC :: (SymbolVals c, KnownDomain dom, HiddenClockResetEnable dom) => Signal dom (AnnotateCycles c)
-annotateC = AnnotateCycles <$> counter
-  where counter = register 0 (counter + 1)
-
-class SymbolVals a where
-  symbolVals :: proxy a -> [String]
-instance SymbolVals '[] where
-  symbolVals _ = []
-instance (KnownSymbol h, SymbolVals t) => SymbolVals (h ': t) where
-  symbolVals _ = symbolVal (Proxy :: Proxy h) : symbolVals (Proxy :: Proxy t)
-
-----
 
 
 
@@ -72,9 +47,8 @@ type R' = Signal Dom50 R
 values :: (Waveform a,NFDataX a) => [a] -> String -> R' -> R'
 values vals name i = o
   where
-    o = i --seq x i
-    -- x = T.traceSignal1 (":"<>name) $ fromList $ (L.map showX vals)
-    x = T.traceSignal1 name $ fromList $ vals <> L.repeat undef
+    o = seq x i
+    x = T.traceSignal1 name $ fromList $ undef : (vals <> L.repeat undef)
 
 test :: String -> (String -> R' -> R') -> (String,R'->R')
 test name f = (name,f name)
@@ -86,7 +60,7 @@ topEntity ::
   Enable Dom50 ->
   R' ->
   R'
-topEntity = exposeClockResetEnable id --runTests
+topEntity = exposeClockResetEnable runTests
 
 runTests :: R' -> R'
 runTests i = L.foldl go i tests'
@@ -106,6 +80,6 @@ main = do
       error msg
       putStrLn "finished with error"
     Right (vcd,meta) ->
-      do writeFile "trace/waveform.vcd" $ Text.unpack vcd
-         writeFileJSON "trace/waveform.json" meta
+      do writeFile     "tests/trace/waveform.vcd" $ Text.unpack vcd
+         writeFileJSON "tests/trace/waveform.json" meta
          putStrLn "finished"

@@ -614,14 +614,14 @@ waitForTraces#
   -> IO ()
 waitForTraces# maps signal traceNames = do
   atomicWriteIORef maps (Map.empty,Map.empty,Map.empty)
-  rest <- foldM go signal traceNames
-  seq rest (return ())
+  rest <- foldM go (sample signal) traceNames
+  return $ deepseqX (head rest) ()
  where
-  go (s0 :- ss) nm = do
+  go s nm = do
     (_,_,m) <- readIORef maps
     if Map.member nm m then
-      deepseqX s0 (return ss)
+      return s
     else
       deepseqX
-        s0
-        (go ss nm)
+        (head s)
+        (go (tail s) nm)

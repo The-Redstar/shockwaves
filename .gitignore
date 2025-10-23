@@ -83,3 +83,6 @@ cabal.config
 /vhdl
 /verilog
 /systemverilog
+
+
+tests/trace/*
