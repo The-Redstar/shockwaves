@@ -160,3 +160,4 @@ test-suite test-vcd
     Tests.Types
   build-depends:
     shockwaves,
+    directory

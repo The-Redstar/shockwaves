@@ -19,6 +19,8 @@ import Data.Proxy
 import Data.Typeable
 import qualified Data.List as L
 
+import System.Directory
+
 createDomain vSystem{vName="Dom50", vPeriod=hzToPeriod 50e6}
 
 
@@ -80,6 +82,7 @@ main = do
       error msg
       putStrLn "finished with error"
     Right (vcd,meta) ->
-      do writeFile     "tests/trace/waveform.vcd" $ Text.unpack vcd
-         writeFileJSON "tests/trace/waveform.json" meta
+      do createDirectoryIfMissing True "test/trace"
+         writeFile     "test/trace/waveform.vcd" $ Text.unpack vcd
+         writeFileJSON "test/trace/waveform.json" meta
          putStrLn "finished"
