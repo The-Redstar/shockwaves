@@ -1,20 +1,23 @@
+-- adapted from commit e702e9a
 
 {-|
 Copyright  :  (C) 2018, Google Inc.
                   2019, Myrtle Software Ltd
-                  2022, QBayLogic B.V.
+                  2022-2024, QBayLogic B.V.
 License    :  BSD2 (see the file LICENSE)
 Maintainer :  QBayLogic B.V. <devops@qbaylogic.com>
 
-Shockwaves utilities for tracing signals and dumping them in various ways. Example usage:
+Utilities for tracing signals and dumping them in various ways. Example usage:
 
 @
 import Clash.Prelude hiding (writeFile)
 import Data.Text.IO  (writeFile)
+import Clash.Shockwaves
+import qualified Clash.Shockwaves.Trace as T
 
 -- | Count and wrap around
 subCounter :: SystemClockResetEnable => Signal System (Index 3)
-subCounter = traceSignal1 "sub" counter
+subCounter = T.traceSignal1 "sub" counter
   where
     counter =
       register 0 (fmap succ' counter)
@@ -25,7 +28,7 @@ subCounter = traceSignal1 "sub" counter
 
 -- | Count, but only when my subcounter is wrapping around
 mainCounter :: SystemClockResetEnable => Signal System (Signed 64)
-mainCounter = traceSignal1 "main" counter
+mainCounter = T.traceSignal1 "main" counter
   where
     counter =
       register 0 (fmap succ' $ bundle (subCounter,counter))
@@ -38,7 +41,7 @@ mainCounter = traceSignal1 "main" counter
 main :: IO ()
 main = do
   let cntrOut = exposeClockResetEnable mainCounter systemClockGen systemResetGen enableGen
-  vcd <- dumpVCD (0, 100) cntrOut ["main", "sub"]
+  vcd <- T.dumpVCD (0, 100) cntrOut ["main", "sub"]
   case vcd of
     Left msg ->
       error msg
@@ -80,6 +83,7 @@ module Clash.Shockwaves.Trace
   , Changed
   , Value
   , Width
+  , Maps
   , TraceMap
   , TypeRepBS
   -- ** Functions
@@ -91,7 +95,7 @@ module Clash.Shockwaves.Trace
   , maps#
   ) where
 
-import Prelude
+import           Prelude
 
 -- Clash:
 import           Clash.Annotations.Primitive (hasBlackBox)
@@ -116,7 +120,10 @@ import qualified Data.ByteString.Lazy  as ByteStringLazy
 import           Data.Char             (ord, chr)
 import           Data.IORef
   (IORef, atomicModifyIORef', atomicWriteIORef, newIORef, readIORef)
-import           Data.List             (foldl1', foldl', unzip5, transpose, uncons)
+#if !MIN_VERSION_base(4,20,0)
+import           Data.List             (foldl')
+#endif
+import           Data.List             (foldl1', unzip5, transpose, uncons)
 import qualified Data.Map.Strict       as Map
 import           Data.Maybe            (fromMaybe, catMaybes)
 import qualified Data.Text             as Text
@@ -127,54 +134,45 @@ import           GHC.Stack             (HasCallStack)
 import           GHC.TypeLits          (KnownNat, type (+))
 import           System.IO.Unsafe      (unsafePerformIO)
 import           Type.Reflection       (Typeable, TypeRep, typeRep)
-
 import qualified Data.Aeson as Json
 import           Data.Aeson            ((.=))
 
-
-
+import           GHC.Conc              (pseq)
 
 -- Shockwaves
 import           Clash.Shockwaves.Internal.Types hiding (Value)
 import           Clash.Shockwaves.Internal.Waveform hiding (width)
 
-
-
 #ifdef CABAL
-import           Clash.Annotations.Primitive
-import           System.FilePath
+import qualified Data.Version
 import qualified Paths_shockwaves
+
+import           System.FilePath
 import           System.IO.Unsafe
+import           Clash.Annotations.Primitive
 
-{-# ANN module (Primitive [VHDL]          (unsafePerformIO Paths_shockwaves.getDataDir </> "prims" </> "common")) #-}
-{-# ANN module (Primitive [Verilog]       (unsafePerformIO Paths_shockwaves.getDataDir </> "prims" </> "common")) #-}
-{-# ANN module (Primitive [SystemVerilog] (unsafePerformIO Paths_shockwaves.getDataDir </> "prims" </> "common")) #-}
+{-# ANN module (Primitive [minBound..] (unsafePerformIO Paths_shockwaves.getDataDir </> "prims" </> "common")) #-}
 #endif
-
-
-
-
-
-
 
 type Period   = Int
 type Changed  = Bool
 type Value    = (Natural, Natural) -- (Mask, Value)
 type Width    = Int
 
-type JSON = Json.Value
-
 -- | Serialized TypeRep we need to store for dumpReplayable / replay
 type TypeRepBS = ByteString
 
-type Maps      = (SignalMap,TypeMap,TraceMap)
-type TraceMap  = Map.Map String (TypeRepBS, Period, Width, [LUTMap -> LUTMap], [Value])
+type AddValue = LUTMap -> LUTMap
+type TraceMap = Map.Map String (TypeRepBS, Period, Width, [AddValue], [Value])
+type Maps     = (SignalMap,TypeMap,TraceMap)
+
+type JSON = Json.Value
 
 -- | Map of traces used by the non-internal trace and dumpvcd functions.
 maps# :: IORef Maps
 maps# = unsafePerformIO $ newIORef (Map.empty,Map.empty,Map.empty)
 -- See: https://github.com/clash-lang/clash-compiler/pull/2511
-{-# CLASH_OPAQUE maps# #-}
+{-# CLASH_OPAQUE traceMap# #-}
 
 mkTrace
   :: HasCallStack
@@ -208,21 +206,20 @@ traceSignal# maps period traceName signal =
     if Map.member traceName traces then
       error $ "Already tracing a signal with the name: '" ++ traceName ++ "'."
     else
-      (
-        ( Map.insert ("logic." <> traceName) (typeName @a) signals
+      ( ( Map.insert ("logic." <> traceName) (typeName @a) signals
         , addTypes @a types
         , Map.insert
             traceName
             ( encode (typeRep @a)
             , period
-            , w
+            , width
             , if hasLUT @a then map addValue $ sample signal else repeat id
             , mkTrace signal)
             traces
         )
       , signal)
  where
-  w = snatToNum (SNat @(BitSize a))
+  width = snatToNum (SNat @(BitSize a))
 -- See: https://github.com/clash-lang/clash-compiler/pull/2511
 {-# CLASH_OPAQUE traceSignal# #-}
 
@@ -361,13 +358,13 @@ traceVecSignal1 traceName signal =
 iso8601Format :: UTCTime -> String
 iso8601Format = formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S"
 
-toPeriodMap :: TraceMap -> Map.Map Period [(String, Width, [LUTMap -> LUTMap], [Value])]
+toPeriodMap :: TraceMap -> Map.Map Period [(String, Width, [AddValue], [Value])]
 toPeriodMap m = foldl' go Map.empty (Map.assocs m)
   where
-    go periodMap (traceName, (_rep, period, width, luts, values)) =
+    go periodMap (traceName, (_rep, period, width, addValues, values)) =
       Map.alter (Just . go') period periodMap
         where
-          go' = ((traceName, width, luts, values):) . (fromMaybe [])
+          go' = ((traceName, width, addValues, values):) . (fromMaybe [])
 
 flattenMap :: Map.Map a [b] -> [(a, b)]
 flattenMap m = concat [[(a, b) | b <- bs] | (a, bs) <- Map.assocs m]
@@ -382,14 +379,14 @@ dumpVCD##
   -> Maps
   -> UTCTime
   -> Either String (Text.Text, JSON)
-dumpVCD## (offset, cycles) (signals,types,traces) now
+dumpVCD## (offset, cycles) (signalMap,typeMap,traceMap) now
   | offset < 0 =
       error $ "dumpVCD: offset was " ++ show offset ++ ", but cannot be negative."
   | cycles < 0 =
       error $ "dumpVCD: cycles was " ++ show cycles ++ ", but cannot be negative."
-  | null traces =
+  | null traceMap =
       error $ "dumpVCD: no traces found. Extend the given trace names."
-  | Map.size traces > 126 - 33 =
+  | Map.size traceMap > 126 - 33 =
       Left $ "Tracemap contains more than 93 traces, which is not supported by VCD."
   | (nm:_) <- offensiveNames =
       Left $ unwords [ "Trace '" ++ nm ++ "' contains"
@@ -410,17 +407,18 @@ dumpVCD## (offset, cycles) (signals,types,traces) now
                            , "$end"
                            , Text.intercalate "\n" $ catMaybes bodyParts
                            ]
-            , json
+            , Json.object  [ "signals" .= signalMap
+                           , "types" .= typeMap
+                           , "luts" .= lutMap
+                           ]
             )
  where
-  json = Json.object ["signals" .= signals, "types" .= types, "luts" .= lutMap]
-
   offensiveNames = filter (any (not . printable)) traceNames
 
   labels = map chr [33..126]
 
   timescale = foldl1' gcd (Map.keys periodMap)
-  periodMap = toPeriodMap traces
+  periodMap = toPeriodMap traceMap
 
   -- Normalize traces until they have the "same" period. That is, assume
   -- we have two traces; trace A with a period of 20 ps and trace B with
@@ -435,24 +433,28 @@ dumpVCD## (offset, cycles) (signals,types,traces) now
   --   B: [B1, B1, B2, B2, B3, B3, ...]
   --
   -- ..because B is "twice as slow" as A.
-  (periods, traceNames, widths, lutss, valuess) =
+  (periods, traceNames, widths, addValuess, valuess) =
     unzip5 $ map
       (\(a, (b, c, d, e)) -> (a, b, c, d, e))
       (flattenMap periodMap)
 
-  periods' = map (`quot` timescale) periods
-  valuess' = map slice $ zipWith normalize periods' valuess
-  lutss'   = map slice $ zipWith normalize periods' lutss 
-  normalize period values = concatMap (replicate period) values
+  periods'    = map (`quot` timescale) periods
+  valuess'    = map slice $ zipWith normalize  periods' valuess
+  addValuess' = map slice $ zipWith normalize' periods' addValuess
+  normalize  period values    = concatMap (replicate period) values
+  normalize' period addValues = concatMap (\x -> x : replicate (period-1) id) addValues
   slice :: [a] -> [a]
   slice values = drop offset $ take cycles values
 
-  lutMap = foldl (flip ($)) Map.empty $ concat lutss'
+  lutMap = foldl (flip ($)) Map.empty $ concat addValuess'
 
   headerDate       = ["$date", Text.pack $ iso8601Format now, "$end"]
 
+#ifdef CABAL
+  clashVer         = Data.Version.showVersion Paths_shockwaves.version -- actually Shockwaves version; TODO
+#else
   clashVer         = "development"
-
+#endif
   headerVersion    = ["$version", "Generated by Clash", Text.pack clashVer , "$end"]
   headerComment    = ["$comment", "No comment", "$end"]
   headerTimescale  = ["$timescale", (show timescale) ++ "ps", "$end"]
@@ -557,8 +559,8 @@ dumpReplayable
   -> IO ByteString
 dumpReplayable n oSignal traceName = do
   waitForTraces# maps# oSignal [traceName]
-  replaySignal <- (\(_,_,x) -> x Map.! traceName) <$> readIORef maps#
-  let (tRep, _period, _width, _luts, samples) = replaySignal
+  replaySignal <- (Map.! traceName) . (\(_a,_b,c)->c) <$> readIORef maps#
+  let (tRep, _period, _width, _addValues, samples) = replaySignal
   pure (ByteStringLazy.concat (tRep : map encode (take n samples)))
 
 -- | Take a serialized signal (dumped with @dumpReplayable@) and convert it
@@ -613,15 +615,28 @@ waitForTraces#
   -- ^ The names of the traces you definitely want to be dumped to the VCD file
   -> IO ()
 waitForTraces# maps signal traceNames = do
-  atomicWriteIORef maps (Map.empty,Map.empty,Map.empty)
-  rest <- foldM go (sample signal) traceNames
-  return $ deepseqX (head rest) ()
+  written <- atomicWriteIORef maps (Map.empty,Map.empty,Map.empty)
+  rest <- foldM go (written `pseq` signal) traceNames
+  -- atomicWriteIORef maps (Map.empty,Map.empty,Map.empty)
+  -- rest <- foldM go signal traceNames
+  seq rest (return ())
  where
-  go s nm = do
+  go (s0 :- ss) nm = do
     (_,_,m) <- readIORef maps
     if Map.member nm m then
-      return s
+      deepseqX s0 (return ss)
     else
       deepseqX
-        (head s)
-        (go (tail s) nm)
+        s0
+        (go ss nm)
+--   rest <- foldM go (sample signal) traceNames -- old version using lists (but it does work!)
+--   return $ deepseqX (head rest) ()
+--  where
+--   go s nm = do
+--     (_,_,m) <- readIORef maps
+--     if Map.member nm m then
+--       return s
+--     else
+--       deepseqX
+--         (head s)
+--         (go (tail s) nm)
