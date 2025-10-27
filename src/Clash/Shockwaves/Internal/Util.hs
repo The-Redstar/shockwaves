@@ -45,7 +45,8 @@ insertIfMissing k v m = if member k m then m else M.insert k v m
 
 -- | Obtain the name of a type from a proxy value.
 -- The name consists of a unique fingerprint (which is safe to use)
--- and a human readable representation of the type (which may not be unique if multiple sources define the same types).
+-- and a human readable representation of the type (which may not be unique
+-- if multiple sources define the same types).
 typeNameP :: Typeable a => Proxy a -> TypeName
 typeNameP p = show (typeRepFingerprint r) <> ":" <> show r
   where r = typeRep p
@@ -59,7 +60,9 @@ instance (KnownSymbol s) => QuickSymbol s
 -- | Check if a value is safe to use.
 -- If not, optionally return an error message.
 safeVal :: (NFData a) => a -> Either (Maybe Value) a
-safeVal x = unsafeDupablePerformIO (catch
-              ( evaluate . force $ unsafeDupablePerformIO (catch (evaluate . force $ Right x)
-                                         (\(e::SomeException) -> return $ Left (Just $ show $ toException e))))
-              (\(XException e) -> return $ Left (Just e)))
+safeVal x = unsafeDupablePerformIO $ catch
+  (   evaluate . force . unsafeDupablePerformIO
+    $ catch (evaluate . force $ Right x)
+            (\(e::SomeException) ->
+              return $ Left (Just $ show $ toException e)))
+  (\(XException e) -> return $ Left (Just e))

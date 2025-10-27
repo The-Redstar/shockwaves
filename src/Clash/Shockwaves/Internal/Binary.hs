@@ -27,7 +27,8 @@ class BitPack a => BinaryPack a where
 instance BitPack a => BinaryPack a where
   binPack = binPackBV . pack
 
--- | Modified version of 'Show' ('BitVector' n) that does not include anything besides the bits.
+-- | Modified version of 'Show' ('BitVector' n) that does not include anything
+-- besides the bits.
 binPackBV :: KnownNat n => BitVector n -> String
 binPackBV (BV @n m i) =
   case natToNum @n @Int of

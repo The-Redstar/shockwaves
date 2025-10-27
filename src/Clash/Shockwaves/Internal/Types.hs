@@ -30,21 +30,31 @@ type SubSignal = String -- ^ Name of a subsignal.
 type SignalName = SubSignal -- ^ Name of a signal.
 type Value = String -- ^ Text displayed as the value of a signal.
 type Prec = Integer -- ^ Operator precedence of the value.
-type Render = Maybe (Value, WaveStyle, Prec) -- ^ Rendered value. This can be @Nothing@ is the value does not exists, or a tuple of the text representation, style, and precedence.
-type BinRep = String -- ^ Binary representation of a haskell value (like 'BitVector', but arbitrarily sized).
+type Render = Maybe (Value, WaveStyle, Prec)
+-- ^ Rendered value. This can be @Nothing@ is the value does not exists,
+-- or a tuple of the text representation, style, and precedence.
+type BinRep = String
+-- ^ Binary representation of a haskell value (like 'BitVector', but arbitrarily sized).
 type LUTName = TypeName -- ^ Reference to a LUT.
 
-type SignalMap = Map SignalName TypeName -- ^ Map that links signal names to their types.
-type TypeMap = Map TypeName Translator -- ^ Map that links type names to their information.
-type LUTMap = Map LUTName LUT -- ^ Table of LUTs. Usually, the index is a type name, but this is not necessarily the case.
-type LUT = Map BinRep Translation -- ^ A lookup table of 'Translation's.
+
+-- | Map that links signal names to their types.
+type SignalMap = Map SignalName TypeName
+-- | Map that links type names to their information.
+type TypeMap = Map TypeName Translator
+-- | Table of LUTs. Usually, the index is a type name, but this is not necessarily the case.
+type LUTMap = Map LUTName LUT
+-- | A lookup table of 'Translation's.
+type LUT = Map BinRep Translation
 
 type Color = RGB Word8 -- ^ The color type used in 'WaveStyle'.
 
 -- | Translation of a value.BinRep
 -- The translation consists of a 'Render' value (the representation of the value itself)
 -- and a list of subsignal translations.
-data Translation = Translation (Maybe (Value,WaveStyle,Prec)) [(SubSignal,Translation)] deriving (Show,Generic,ToJSON,NFData,Eq)
+data Translation
+  = Translation (Maybe (Value,WaveStyle,Prec)) [(SubSignal,Translation)]
+  deriving (Show,Generic,ToJSON,NFData,Eq)
 
 -- | The style in which a signal should be displayed.
 data WaveStyle
@@ -56,9 +66,6 @@ data WaveStyle
 
 instance NFData WaveStyle where
   rnf !_ = ()
-
--- deriving instance Generic Color -- TODO: move back to custom color class? would be a shame
--- deriving instance NFData Color
 
 -- | Different number formats.
 data NumberFormat
@@ -74,19 +81,21 @@ newtype Structure
   = Structure [(SubSignal,Structure)]
   deriving (Show,Generic,ToJSON)
 
--- | A translator. The translator has a width, indicating the number of bits it translates,
--- as well as a 'TranslatorVariant' that determines the translation algorithm.
+-- | A translator. The translator has a width, indicating the number of bits it
+-- translates, as well as a 'TranslatorVariant' that determines the translation algorithm.
 data Translator = Translator Int TranslatorVariant deriving (Show)
 
 -- | The translation algorithm used.
 data TranslatorVariant
   = TRef TypeName Structure
-  -- ^ Use the translator of a different type. Note that the width value of the 'Translator's should still match.
-  -- The structure is only used so that the structure can be reconstructed from the translator alone, and is not
+  -- ^ Use the translator of a different type. Note that the width value of the
+  -- 'Translator's should still match. The structure is only used so that the
+  -- structure can be reconstructed from the translator alone, and is not
   -- actually stored in the final output.
   | TSum [Translator]
-  -- ^ Select one translator to be used based on the first bits of the binary representation. 
-  -- Translate using the selected translator. Keep in mind that problem may occur if subsignal names are shared.
+  -- ^ Select one translator to be used based on the first bits of the binary
+  -- representation. Translate using the selected translator. Keep in mind that
+  -- problems may occur if subsignal names are shared.
   | TProduct
     { subs          :: [(Maybe SubSignal, Translator)] -- ^ List of fields to translate.
     , start        :: Value -- ^ Text to insert at the start of the value.
@@ -100,9 +109,11 @@ data TranslatorVariant
     , preco        :: Prec -- ^ Outer precedence: used for the combined value.
     , style        :: Int
     -- ^ Select which field should be used to determine the style.
-    -- If no style is present in this field, or style is set to -1, use the default style instead.
+    -- If no style is present in this field, or style is set to -1,
+    -- use the default style instead.
     }
-  -- ^ Split the binary data into separate fields, translate each of these, and join together the values.
+  -- ^ Split the binary data into separate fields, translate each of these,
+  -- and join together the values.
   --
   -- Example:
   -- @
@@ -117,7 +128,8 @@ data TranslatorVariant
   --   , preco = 11
   --   }
   -- @
-  | TConst Translation -- ^ A constant translation value. The binary value provided is completely ignored, even if not properly defined.
+  | TConst Translation -- ^ A constant translation value. The binary value
+  -- provided is completely ignored, even if not properly defined.
   | TLut LUTName Structure -- ^ A reference to a lookup table.
   | TNumber
     { format :: NumberFormat -- ^ Format used to display data.
@@ -132,17 +144,22 @@ data TranslatorVariant
     , preci  :: Prec -- ^ Inner precedence: used on subvalues.
     , preco  :: Prec -- ^ Outer precedence: used for the combined value.
     }
-  -- ^ An array value. This behaves much like 'TProduct', except that no labels are provided, and all fields use the same translator.
-  | TStyled WaveStyle Translator -- ^ Apply a style to a translation. Does not change the structure.
+  -- ^ An array value. This behaves much like 'TProduct', except that no labels
+  -- are provided, and all fields use the same translator.
+  | TStyled WaveStyle Translator
+  -- ^ Apply a style to a translation.
+  -- Does not change the structure.
   | TDuplicate SubSignal Translator
-  -- ^ Translate a value only if the first bit of the binary representation is @1@. If it is @0@, display nothing.
-  -- TODO: Verify this is actually useful.
+  -- ^ Translate a value only if the first bit of the binary representation is
+  -- @1@. If it is @0@, display nothing.
   deriving (Show)
 
 
 
 instance IsString WaveStyle where
-  fromString s = WSColor . toSRGB24 . fromJust $ (readColourName s :: (Maybe (Colour Double)))
+  fromString s =
+      WSColor . toSRGB24 . fromJust
+    $ (readColourName s :: (Maybe (Colour Double)))
 
 
 instance ToJSON Translator where
@@ -150,15 +167,17 @@ instance ToJSON Translator where
     where v' = case v of
                 TRef n _ -> object ["R" .= n]
                 TSum subs -> object ["S" .= toJSON subs]
-                TProduct{subs,start,sep,stop,labels,preci,preco,style} -> object ["P" .= object
-                  [ "t" .= toJSON subs
-                  , "[" .= start
-                  , "," .= sep
-                  , "]" .= stop
-                  , "n" .= labels
-                  , "p" .= preci
-                  , "P" .= preco
-                  , "s" .= style]]
+                TProduct{subs,start,sep,stop,labels,preci,preco,style} ->
+                  object
+                    ["P" .= object
+                      [ "t" .= toJSON subs
+                      , "[" .= start
+                      , "," .= sep
+                      , "]" .= stop
+                      , "n" .= labels
+                      , "p" .= preci
+                      , "P" .= preco
+                      , "s" .= style ]]
                 TConst t -> object ["C" .= toJSON t]
                 TLut lut s -> object ["L" .= [toJSON lut,toJSON s]]
                 TNumber{format} -> object ["N" .= object ["f" .= format]]
@@ -186,5 +205,3 @@ instance ToJSON NumberFormat where
     NFHex -> "H"
     NFOct -> "O"
     NFBin -> "B"
-
--- instance ToJSON Color where

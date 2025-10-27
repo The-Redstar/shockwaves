@@ -151,7 +151,10 @@ import           System.FilePath
 import           System.IO.Unsafe
 import           Clash.Annotations.Primitive
 
-{-# ANN module (Primitive [minBound..] (unsafePerformIO Paths_shockwaves.getDataDir </> "prims" </> "common")) #-}
+{-# ANN module
+  ( Primitive [minBound..] 
+    (unsafePerformIO Paths_shockwaves.getDataDir </> "prims" </> "common")
+  ) #-}
 #endif
 
 type Period   = Int
@@ -629,7 +632,8 @@ waitForTraces# maps signal traceNames = do
       deepseqX
         s0
         (go ss nm)
---   rest <- foldM go (sample signal) traceNames -- old version using lists (but it does work!)
+-- -- old version using lists (but it does work!)
+--   rest <- foldM go (sample signal) traceNames 
 --   return $ deepseqX (head rest) ()
 --  where
 --   go s nm = do

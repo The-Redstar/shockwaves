@@ -67,21 +67,24 @@ safeValOr y x = case safeVal x of
   Right x' -> x'
   Left _e -> y
 
------------------------------------------------ WAVEFORM --------------------------------------
+------------------------------------------ WAVEFORM --------------------------------------
 
 {-|
 
 Main class for making types displayable in the waveform viewer.
-The class is responsible for defining an appropriate translator and subsignal structure, as well as registering types.
+The class is responsible for defining an appropriate translator and subsignal
+structure, as well as registering types.
 
-To make LUT approaches possible, the class must also be able to translate values, and to register individual values.
-The latter requires the values to be split into their subvalues, so that they may be registered in their subsignals.
+To make LUT approaches possible, the class must also be able to translate values,
+and to register individual values. The latter requires the values to be split into
+their subvalues, so that they may be registered in their subsignals.
 
-By default, 'GHC.Generics.Generic' is used to automatically derive this behaviour. Extra classes are provided to help
-implement lookup tables or numerical translators. Custom implementations are generally ill-adviced, but may be needed
-for GADTs.
+By default, 'GHC.Generics.Generic' is used to automatically derive this behaviour.
+Extra classes are provided to help implement lookup tables or numerical translators.
+Custom implementations are generally ill-advised, but may be needed for GADTs.
 
 -}
+
 class (BitPack a, Typeable a) => Waveform a where
   -- | Provide the type name.
   -- Overriding this value is only really useful for derive via strategies.
@@ -93,7 +96,8 @@ class (BitPack a, Typeable a) => Waveform a where
   default translator :: (WaveformG (Rep a ())) => Translator
   translator = translatorG @(Rep a ()) (width @a) (styles' @a)
 
-  -- | Function to translate values. This function has builtin error handling, and should not be overridden.
+  -- | Function to translate values. This function has builtin error handling,
+  -- and should not be overridden.
   -- To change the translation, override 'translate'' instead.
   translate :: a -> Translation
   translate x = case safeVal (translate' x) of
@@ -116,7 +120,8 @@ class (BitPack a, Typeable a) => Waveform a where
     where self = typeName @a
     --addSubtypes @a $ insertIfMissing (typeName (Proxy @a)) (meta @a) tm
 
-  -- | Register all subtypes of this type. Custom implementations might need to modify this.
+  -- | Register all subtypes of this type. Custom implementations might need to
+  -- modify this.
   addSubtypes :: TypeMap -> TypeMap
   default addSubtypes :: (WaveformG (Rep a ())) => TypeMap -> TypeMap
   addSubtypes = addTypesG @(Rep a ())
@@ -142,7 +147,8 @@ class (BitPack a, Typeable a) => Waveform a where
 
   -- | List of styles used for constructors.
   --
-  -- Since giving different constructors different colors is a very common usecase of the waveform style,
+  -- Since giving different constructors different colors is a very common usecase
+  -- of the waveform style,
   -- this list can be overridden to provides styles for the constructors, in order.
   -- For missing styles, the default is used.
   styles :: [WaveStyle]
@@ -170,28 +176,36 @@ class WaveformG a where
   -- | Given a bitsize and list of styles for the constructors, provide a translator.
   translatorG :: Int -> [WaveStyle] -> Translator
 
-  -- | Given a list of styles for the constructors, translate a value for a type with multiple constructors.
+  -- | Given a list of styles for the constructors, translate a value for a type
+  -- with multiple constructors.
   translateAsSumG :: [WaveStyle] -> a -> Translation
   translateAsSumG = undefined
 
   -- | Given a value, translate all fields.
   translateAllG :: a -> [(SubSignal,Translation)] -- for :*:
-  -- | Given one or more constructors and a list of styles, or one or more fields, give a list of translators.
+  -- | Given one or more constructors and a list of styles, or one or more fields,
+  -- give a list of translators.
   -- For single constructor types, immediately return a list of field translators.
-  translatorsG :: [WaveStyle] -> [(SubSignal,Translator)] -- for :+:  and :*: but also used at a type level to get all field translators for defining tuples more easily
+  translatorsG :: [WaveStyle] -> [(SubSignal,Translator)]
+  -- for :+:  and :*: but also used at a type level to get all field translators
+  -- for defining tuples more easily
 
   -- | Given the render of the toplevel value and the value, create a list of subsignals.
-  -- This means that for types with multiple constructors, the render value is copied to a subsignal.
-  splitG :: Render -> a -> [(SubSignal,Translation)] -- used for LUTS. copy the render if there are multiple constructors
+  -- This means that for types with multiple constructors, the render value is
+  -- copied to a subsignal.
+  splitG :: Render -> a -> [(SubSignal,Translation)]
+  -- used for LUTS. copy the render if there are multiple constructors
 
   -- | Add all subtypes to the type map, recusively.
   addTypesG :: TypeMap -> TypeMap
-  -- | Split a value into its subvalues and add them or their subvalues to a LUT if needed, recursively.
+  -- | Split a value into its subvalues and add them or their subvalues to a LUT 
+  -- if needed, recursively.
   addValueG :: a -> LUTMap -> LUTMap
   -- | Return whether any of the subtypes makes use of a LUT.
   hasLUTG :: Bool
 
-  -- | Bitsize of a type. Only used to determine the width of constructors (and their fields).
+  -- | Bitsize of a type. Only used to determine the width of constructors
+  -- (and their fields).
   widthG :: Int -- for individual constructors
 
 
@@ -217,7 +231,9 @@ instance (WaveformG (C1 m2 s k), WaveformG (s k)) => WaveformG (D1 m1 (C1 m2 s) 
   translateG sty = translateG sty . unM1
   translatorG = translatorG @(C1 m2 s k)
 
-  translateAllG = translateAllG . unM1 -- these are used for tuple definitions, and generally making it easier to write 1-constructor Waveform implementations
+  translateAllG = translateAllG . unM1
+  -- these are used for tuple definitions,
+  -- and generally making it easier to write 1-constructor Waveform implementations
   translatorsG = translatorsG @(s k)
 
   splitG _ = translateAllG . unM1
@@ -250,9 +266,12 @@ instance (WaveformG (a k), WaveformG (b k)) => WaveformG ((a :+: b) k) where
   translateG sty (L1 x) = translateG sty x
   translateG sty (R1 y) = translateG (L.drop (L.length $ translatorsG @(a k) sty) sty) y
   translateAsSumG sty (L1 x) = translateAsSumG sty x
-  translateAsSumG sty (R1 y) = translateAsSumG (L.drop (L.length $ translatorsG @(a k) sty) sty) y
+  translateAsSumG sty (R1 y) = translateAsSumG
+    (L.drop (L.length $ translatorsG @(a k) sty) sty) y
 
-  translatorsG sty = translatorsG @(a k) sty <> translatorsG @(b k) (L.drop (L.length $ translatorsG @(a k) sty) sty)
+  translatorsG sty =
+       translatorsG @(a k) sty
+    <> translatorsG @(b k) (L.drop (L.length $ translatorsG @(a k) sty) sty)
 
   translatorG = undefined
   translateAllG = undefined
@@ -272,7 +291,8 @@ dup :: SubSignal -> Translator -> Translator
 dup name (Translator w t) = Translator w $ TDuplicate name (Translator w t)
 
 -- struct constructor
-instance (WaveformG (fields k), KnownSymbol name) => WaveformG (C1 (MetaCons name fix True) fields k) where
+instance (WaveformG (fields k), KnownSymbol name)
+  => WaveformG (C1 (MetaCons name fix True) fields k) where
   translateG sty x = translateFromSubs
     (translatorG @(C1 (MetaCons name fix True) fields k) undefined sty)
     (translateAllG $ unM1 x)
@@ -295,7 +315,9 @@ instance (WaveformG (fields k), KnownSymbol name) => WaveformG (C1 (MetaCons nam
         }
 
   translateAllG = undefined
-  translatorsG sty = [(sym @name, dup (sym @name) $ translatorG @(C1 (MetaCons name fix True) fields k) undefined sty)]
+  translatorsG sty =
+    [   (sym @name, dup (sym @name)
+      $ translatorG @(C1 (MetaCons name fix True) fields k) undefined sty)]
 
   splitG r x = [(sym @name, Translation r $ translateAllG $ unM1 x)]
 
@@ -312,7 +334,8 @@ enumLabel = L.zipWith (\i (_,t) -> (show i,t)) [(0::Integer)..]
 
 
 -- applicative product
-instance (WaveformG (fields k), KnownSymbol name, PrecF fix) => WaveformG (C1 (MetaCons name fix False) fields k) where
+instance (WaveformG (fields k), KnownSymbol name, PrecF fix)
+  => WaveformG (C1 (MetaCons name fix False) fields k) where
   translateG sty x = safeTranslateFromSubs
     (translatorG @(C1 (MetaCons name fix False) fields k) undefined sty)
     (enumLabel $ translateAllG $ unM1 x)
@@ -355,7 +378,9 @@ instance (WaveformG (fields k), KnownSymbol name, PrecF fix) => WaveformG (C1 (M
       isOperator = not (isAlpha . L.head $ sym @name) && (L.length subs == 2)
 
   translateAllG = undefined
-  translatorsG sty = [(sym @name, dup (sym @name) $ translatorG @(C1 (MetaCons name fix False) fields k) undefined sty)]
+  translatorsG sty =
+    [   (sym @name, dup (sym @name)
+      $ translatorG @(C1 (MetaCons name fix False) fields k) undefined sty)]
 
   splitG r x = [(sym @name, Translation r $ enumLabel $ translateAllG $ unM1 x)]
 
@@ -413,7 +438,8 @@ ref :: Waveform a => Proxy a -> Translator
 ref (_::Proxy a) = Translator (width @a) $ TRef (typeName @a) (structure $ translator @a)
 
 -- struct field
-instance (Waveform t, KnownSymbol name) => WaveformG (S1 (MetaSel (Just name) p q r) (Rec0 t) k) where
+instance (Waveform t, KnownSymbol name)
+  => WaveformG (S1 (MetaSel (Just name) p q r) (Rec0 t) k) where
   translateG = undefined
   translateAsSumG = undefined
   translateAllG x = [(sym @name, translate $ unK1 . unM1 $ x)]
@@ -456,14 +482,14 @@ instance (Waveform t) => WaveformG (S1 (MetaSel Nothing p q r) (Rec0 t) k) where
 
 
 
------------------------------------------------- LUTS --------------------------------------------------------
+------------------------------------------------ LUTS ------------------------------------
 
 {-|
 Class for easily defining custom translations for a type by using LUTs.
 To use this class, a type must derive 'Waveform' via 'WaveformForLUT'.
 
-Bye default, the implementation uses 'GHC.Generics.Generic' for defining subsignals and operator precedence,
-and 'Show' for displaying the value.
+Bye default, the implementation uses 'GHC.Generics.Generic' for defining subsignals
+and operator precedence, and 'Show' for displaying the value.
 -}
 class (Typeable a, BitPack a) => WaveformLUT a where
   -- | Provides the hierarchy of subsignals.
@@ -484,10 +510,13 @@ class (Typeable a, BitPack a) => WaveformLUT a where
   -- The toplevel render is provided so that if a value has multiple constructors, the
   -- render can be reused for the subsignal of the constructor.
   splitL :: Render -> a -> [(SubSignal,Translation)]
-  default splitL :: (Generic a, WaveformG (Rep a ())) => Render -> a -> [(SubSignal,Translation)]
+  default splitL
+    :: (Generic a, WaveformG (Rep a ()))
+    => Render -> a -> [(SubSignal,Translation)]
   splitL r x = splitG r (from x :: Rep a ())
 
-  -- | Render a value. By default, this is split into the functions 'labelL', 'styleL' and 'precL'.
+  -- | Render a value. By default, this is split into the functions 'labelL',
+  -- 'styleL' and 'precL'.
   displayL :: a -> Render
   displayL x = Just (labelL x, styleL x, precL x)
 
@@ -496,7 +525,8 @@ class (Typeable a, BitPack a) => WaveformLUT a where
   default labelL :: Show a => a -> Value
   labelL = show
 
-  -- | Provide the operator precedence of a value. By default, this uses 'GHC.Generics.Generic'.
+  -- | Provide the operator precedence of a value. By default, this uses
+  -- 'GHC.Generics.Generic'.
   precL :: a -> Prec
   default precL :: (Generic a, PrecG (Rep a ())) => a -> Prec
   precL x = precG (from x :: Rep a ())
@@ -516,19 +546,24 @@ class (Typeable a, BitPack a) => WaveformLUT a where
 -- @
 newtype WaveformForLUT a = WfLUT a deriving (Generic,BitPack,Typeable)
 
-instance (WaveformLUT a, BitPack a, Typeable a) => Waveform (WaveformForLUT a) where
+instance (WaveformLUT a, BitPack a, Typeable a)
+  => Waveform (WaveformForLUT a) where
   typeName = typeNameP (Proxy @a)
   
-  translator = Translator (width @(WaveformForLUT a)) $ TLut (typeNameP (Proxy @a)) (structureL @a)
+  translator = 
+      Translator (width @(WaveformForLUT a))
+    $ TLut (typeNameP (Proxy @a)) (structureL @a)
   translate' (WfLUT x) = translateL x
 
   addSubtypes = id
 
-  addValue x m = M.insert ty (insertIfMissing bin trans $ M.findWithDefault M.empty ty m) m
-    where
-      ty = typeNameP (Proxy @a)
-      bin = binPack x
-      trans = translate x
+  addValue x m = M.insert ty
+    (insertIfMissing bin trans $ M.findWithDefault M.empty ty m)
+    m
+   where
+    ty = typeNameP (Proxy @a)
+    bin = binPack x
+    trans = translate x
 
   hasLUT = True
 
@@ -541,7 +576,8 @@ instance (WaveformLUT a, BitPack a, Typeable a) => Waveform (WaveformForLUT a) w
 
 ----------------------------------------------- PREC ----------------------------------
 
--- | Helper class for determining the precedence and number of fields of a value's constructor.
+-- | Helper class for determining the precedence and number of fields of a
+-- value's constructor.
 class (Generic a) => PrecG a where
   precG :: a -> Prec
   nFields :: Integer
@@ -561,11 +597,13 @@ instance (PrecG (a k), PrecG (b k)) => PrecG ((a :+: b) k) where
   precG (R1 y) = precG y
 
 -- struct
-instance (PrecG (fields k), PrecF fix) => PrecG (C1 (MetaCons name fix False) fields k) where
+instance (PrecG (fields k), PrecF fix)
+  => PrecG (C1 (MetaCons name fix False) fields k) where
   precG _ = 11
 
-instance (PrecG (fields k), PrecF fix) => PrecG (C1 (MetaCons name fix True) fields k) where
-  precG _ = if nFields @(fields k) == 0 then 11 else precF @fix--prec $ fromSing $ sing @fix
+instance (PrecG (fields k), PrecF fix)
+  => PrecG (C1 (MetaCons name fix True) fields k) where
+  precG _ = if nFields @(fields k) == 0 then 11 else precF @fix
 
 
 -- count fields
@@ -591,18 +629,20 @@ instance (KnownNat p) => PrecF (InfixI a p) where
 
 
 
----------------------------------------- OTHER VARIANTS -----------------------------------
+---------------------------------------- OTHER VARIANTS ----------------------------------
 
 -- CONST
 
--- | Helper class for defining a constant translation value. To use this, derive Waveform via WaveformForConst.
+-- | Helper class for defining a constant translation value. To use this,
+-- derive Waveform via WaveformForConst.
 class (BitPack a, Typeable a) => WaveformConst a where
   constTrans :: Render
 
 -- | Helper class for deriving 'Waveform' for types implementing 'WaveformConst'.
 newtype WaveformForConst a = WfConst a deriving (Generic,BitPack,Typeable)
 
-instance (WaveformConst a, BitPack a, Typeable a) => Waveform (WaveformForConst a) where
+instance (WaveformConst a, BitPack a, Typeable a)
+  => Waveform (WaveformForConst a) where
   typeName = typeNameP (Proxy @a)
   translator = Translator 0 $ TConst $ Translation (constTrans @a) []
   translate' _ = Translation (constTrans @a) []
@@ -619,7 +659,9 @@ instance (WaveformConst a, BitPack a, Typeable a) => Waveform (WaveformForConst 
 -- @
 -- deriving via WaveformForNumber NFSig (Signed 3) instance Waveform (Signed 3)
 -- @
-newtype WaveformForNumber (f::NumberFormat) a = WfNum a deriving (Generic,BitPack,Typeable)
+newtype WaveformForNumber (f::NumberFormat) a
+  = WfNum a
+  deriving (Generic,BitPack,Typeable)
 
 instance (
     BitPack a
@@ -629,7 +671,9 @@ instance (
   , Integral a
   ) => Waveform (WaveformForNumber (f::NumberFormat) a) where
   typeName = typeNameP (Proxy @a)
-  translator = Translator (width @(WaveformForNumber f a)) $ TNumber{format = formatVal (Proxy @f)}
+  translator =
+      Translator (width @(WaveformForNumber f a))
+    $ TNumber{format = formatVal (Proxy @f)}
   translate' (WfNum x) = Translation (Just (v,WSNormal,11)) []
     where
       v = (case formatVal $ Proxy @f of
@@ -664,7 +708,7 @@ instance KnownNFormat NFOct where
 instance KnownNFormat NFBin where
   formatVal _ = NFBin
 
----------------------------------------- IMPLEMENTATIONS ----------------------------------
+--------------------------------------- IMPLEMENTATIONS ----------------------------------
 
 -- TUPLES
 {-
@@ -796,9 +840,12 @@ deriving via WaveformForNumber NFUns Word64 instance Waveform Word64
 -- instance Display Half where
 -- deriving via NoSplit Half instance Split Half
 
-deriving via WaveformForNumber NFSig (Signed n) instance (KnownNat n) => Waveform (Signed n)
-deriving via WaveformForNumber NFUns (Unsigned n) instance (KnownNat n) =>  Waveform (Unsigned n)
-deriving via WaveformForNumber NFUns (Index n) instance (1 <= n, KnownNat n) => Waveform (Index n)
+deriving via WaveformForNumber NFSig (Signed n)
+  instance (KnownNat n) => Waveform (Signed n)
+deriving via WaveformForNumber NFUns (Unsigned n)
+  instance (KnownNat n) =>  Waveform (Unsigned n)
+deriving via WaveformForNumber NFUns (Index n)
+  instance (1 <= n, KnownNat n) => Waveform (Index n)
 
 instance Waveform a => Waveform (Complex a)
 
@@ -894,20 +941,24 @@ instance (KnownNat n, Waveform a) => Waveform (Vec n a) where
   hasLUT = hasLUT @a
 
 
-deriving via WaveformForNumber NFBin (BitVector n) instance (KnownNat n) => Waveform (BitVector n)
+deriving via WaveformForNumber NFBin (BitVector n)
+  instance (KnownNat n) => Waveform (BitVector n)
 
 -- fixed point
-instance (BitPack (Fixed r i f), KnownNat i, KnownNat f, Show (Fixed r i f), Typeable r) => WaveformLUT (Fixed r i f) where
+instance (BitPack (Fixed r i f), KnownNat i, KnownNat f, Show (Fixed r i f), Typeable r)
+  => WaveformLUT (Fixed r i f) where
   structureL = Structure []
   splitL _ _ = []
   precL _ = 11
 deriving via WaveformForLUT (Fixed r i f)
-  instance (BitPack (Fixed r i f), KnownNat i, KnownNat f, Show (Fixed r i f), Typeable r) => Waveform (Fixed r i f)
+  instance (BitPack (Fixed r i f), KnownNat i, KnownNat f, Show (Fixed r i f), Typeable r)
+    => Waveform (Fixed r i f)
 
 -- snat
 instance (KnownNat n, BitPack (SNat n)) => WaveformConst (SNat n) where
   constTrans = Just (show $ natVal $ Proxy @n, WSNormal, 11)
-deriving via WaveformForConst (SNat n) instance (KnownNat n, BitPack (SNat n)) => Waveform (SNat n)
+deriving via WaveformForConst (SNat n)
+  instance (KnownNat n, BitPack (SNat n)) => Waveform (SNat n)
 
 
 -- the monster that is RTree :/
@@ -915,7 +966,8 @@ type family RTreeIsLeaf d where
   RTreeIsLeaf 0 = True
   RTreeIsLeaf d = False
 
-instance (Waveform a, KnownNat d, WaveformRTree (RTreeIsLeaf d) d a) => Waveform (RTree d a) where
+instance (Waveform a, KnownNat d, WaveformRTree (RTreeIsLeaf d) d a)
+  => Waveform (RTree d a) where
   translator = Translator (width @(RTree d a)) $ if natVal (Proxy @d) == 0 then
       TProduct
         { start = "BR "
@@ -960,7 +1012,9 @@ instance (Waveform a) => WaveformRTree True 0 a where
       subs = case t of
         RLeaf x -> [("0",translate x)]
         _ -> undefined
-instance (Waveform (RTree d1 a), Waveform a, d ~ d1 + 1, KnownNat d1) => WaveformRTree False d a where
+
+instance (Waveform (RTree d1 a), Waveform a, d ~ d1 + 1, KnownNat d1)
+  => WaveformRTree False d a where
   addValueRTree t = if hasLUT @a then
     case t of
       RBranch x y -> addValue (x:: RTree d1 a) . addValue y

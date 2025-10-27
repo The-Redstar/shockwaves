@@ -53,13 +53,15 @@ applyPrecL :: Prec -> [(a, Translation)] -> [(a, Translation)]
 applyPrecL p = L.map (\(a,b) -> (a,applyPrec p b))
 
 
--- | Join a list of values with a separator. If the list is empty, an empty value is returned.
+-- | Join a list of values with a separator. If the list is empty, an empty
+-- value is returned.
 joinWith :: Value -> [Value] -> Value
 joinWith s (x:y:r) = x <> s <> joinWith s (y:r)
 joinWith _ [x] = x
 joinWith _ [] = ""
 
--- | Get the value of a 'Translation'. If the value is not defined, return @{value missing}@.
+-- | Get the value of a 'Translation'. If the value is not defined,
+-- return @{value missing}@.
 getVal :: Translation -> Value
 getVal t = case t of
               Translation (Just (v,_,_)) _ -> v
@@ -83,14 +85,17 @@ safeTranslateFromSubs t subs = case safeVal subs of
 -- | Complete a translation based on already translated subsignals.
 --
 -- The exact behaviour is non-trivial.
--- Translators that require special translation ('TRef','TLut','TNumber') cannot be translated.
--- If a single subsignal is provided with label `""`, this translation is used as if it was the result of the translation.
+-- Translators that require special translation ('TRef','TLut','TNumber')
+-- cannot be translated. If a single subsignal is provided with label `""`,
+-- this translation is used as if it was the result of the translation.
 -- Otherwise, an error is raised.
 --
--- 'TSum', 'TProduct', 'TArray' and 'TConst' render a value as expected based on the subtranslations.
--- Note for TSum that this is a list containing only the translation of the variant used, i.e. it behaves like 'TRef', 'TLut' and 'TNumber'.
+-- 'TSum', 'TProduct', 'TArray' and 'TConst' render a value as expected based on
+-- the subtranslations. Note for TSum that this is a list containing only the
+-- translation of the variant used, i.e. it behaves like 'TRef', 'TLut' and 'TNumber'.
 --
--- The final two variants, 'TStyle' and 'TDuplicate' are considered *wrappers* and translate the value recursively.
+-- The final two variants, 'TStyle' and 'TDuplicate' are considered *wrappers*
+-- and translate the value recursively.
 translateFromSubs :: Translator -> [(SubSignal,Translation)] -> Translation
 translateFromSubs (Translator _ translator) subs = case translator of
   TRef _ _ -> case subs of
@@ -129,7 +134,11 @@ translateFromSubs (Translator _ translator) subs = case translator of
     } -> Translation ren subs
       where
         ren = if L.length subs == len then
-          Just (start <> joinWith sep (L.map (getVal . applyPrec preci . snd) subs) <> stop, WSNormal, preco)
+          Just
+            (    start
+              <> joinWith sep (L.map (getVal . applyPrec preci . snd) subs)
+              <> stop
+            , WSNormal, preco )
         else
           renError "{values missing}"
 
@@ -154,7 +163,9 @@ structure (Translator _ t) = case t of
   TConst _ -> Structure [] -- TODO: derive from value
   TLut _ s -> s
   TNumber{} -> Structure []
-  TArray{sub,len} -> Structure $ L.map (first show) $ enumerate $ L.replicate len $ structure sub
-    where enumerate = L.zip [(0::Int)..]
+  TArray{sub,len} ->
+      Structure . L.map (first show) . enumerate
+    $ L.replicate len $ structure sub
+   where enumerate = L.zip [(0::Int)..]
   TStyled _ t' -> structure t'
   TDuplicate n t' -> Structure [(n,structure t')]
